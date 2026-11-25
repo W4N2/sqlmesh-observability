@@ -1,0 +1,65 @@
+site_name: sqlmesh-observability
+site_description: Elementary-style data observability for SQLMesh projects
+site_url: https://w4n2.github.io/sqlmesh-observability/
+repo_url: https://github.com/W4N2/sqlmesh-observability
+repo_name: W4N2/sqlmesh-observability
+edit_uri: edit/main/docs/
+copyright: Copyright 2026 W4N2. Apache License 2.0.
+
+# Local planning notes live in docs/ but are not part of the site.
+exclude_docs: |
+  plan.md
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue grey
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue grey
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+
+nav:
+  - Home: index.md
+  - How it works: how-it-works.md
+  - Getting started: getting-started.md
+  - Guides:
+      - Anomaly audits: audits.md
+      - Passive monitors: monitors.md
+      - Report and app: report.md
+      - Alerts: alerts.md
+  - Reference:
+      - Configuration: configuration.md
+      - CLI: cli.md
+      - Warehouse tables: warehouse-tables.md
+      - Known limitations: limitations.md
+  - Contributing:
+      - Verification checklist: verification.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format

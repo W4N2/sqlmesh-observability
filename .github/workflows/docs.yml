@@ -1,0 +1,62 @@
+name: docs
+
+# Builds the documentation site and the live demo report, and publishes both to GitHub Pages.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  # The execution-observation API is not in a SQLMesh release yet; pin a tested main commit.
+  SQLMESH_REF: 3df452cc9f47a435439cda087c3a419a1778b2b9
+  NO_MKDOCS_2_WARNING: "1"
+  SQLMESH__DISABLE_ANONYMIZED_ANALYTICS: "1"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # setuptools_scm reads the version from git history
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "sqlmesh @ git+https://github.com/SQLMesh/sqlmesh@${SQLMESH_REF}"
+          python -m pip install -e ".[docs]"
+
+      - name: Build the demo report
+        run: python scripts/build_demo.py docs/demo/index.html
+
+      - name: Build the site
+        run: mkdocs build --strict
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

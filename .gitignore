@@ -29,3 +29,7 @@ htmlcov/
 /optimized_query/
 /snapshot/
 /.cache/
+
+# Docs site build output and the generated demo report
+/site/
+/docs/demo/

@@ -42,6 +42,8 @@ sqlmesh-observe init-audits                 # optional: add the anomaly audits t
 
 See [Getting started](docs/getting-started.md) for installation and a full walkthrough.
 
+**Docs site and live demo report:** https://w4n2.github.io/sqlmesh-observability/
+
 ## Documentation
 
 | Guide | Covers |

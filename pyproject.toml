@@ -22,6 +22,11 @@ serve = [
     "starlette>=0.27",
     "uvicorn>=0.22",
 ]
+# The documentation site (mkdocs.yml).
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.5,<10",
+]
 dev = [
     "httpx",  # Starlette's test client
     "mypy",

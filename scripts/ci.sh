@@ -23,7 +23,7 @@ step "ruff check"
 "$bin/ruff" check .
 
 step "ruff format --check"
-"$bin/ruff" format --check src tests
+"$bin/ruff" format --check src tests scripts
 
 step "mypy"
 "$bin/mypy" src
