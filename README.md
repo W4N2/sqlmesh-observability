@@ -82,3 +82,7 @@ scripts/ci.sh                             # everything a change must pass
 `tests/test_e2e.py` runs one prod-shaped history through every part of the package.
 [docs/verification.md](docs/verification.md) maps each SQLMesh behavior the package depends on to
 the test that pins it. See [CONTRIBUTING.md](CONTRIBUTING.md) for commit rules.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64", "setuptools_scm>=8"]
+requires = ["setuptools>=77", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,8 @@ name = "sqlmesh-observability"
 dynamic = ["version"]
 description = "Elementary-style data observability for SQLMesh projects"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.9,<3.13"
 dependencies = [
     # TODO: pin to the first SQLMesh release that includes execution observations
