@@ -65,7 +65,7 @@ time. Options are listed in the [CLI reference](cli.md#report).
 ## Web app
 
 ```bash
-pip install 'sqlmesh-observability[serve]'
+pip install "sqlmesh-observability[serve]"
 sqlmesh-observe serve --host 0.0.0.0 --port 8000
 ```
 

@@ -5,9 +5,8 @@ It installs as a Python package next to SQLMesh, is enabled from `config.py`, an
 to SQLMesh itself.
 
 !!! warning "Pre-alpha"
-    The package depends on SQLMesh's execution-observation API, which is on SQLMesh `main` after
-    `v0.236.4` but not in a release yet, and the package is not on PyPI. See
-    [Getting started](getting-started.md) for installing from source.
+    Expect breaking changes before 1.0. Requires Python 3.9 or newer and a SQLMesh release with
+    the execution-observation API (added after `v0.236.4`).
 
 [Open the live demo report](demo/index.html){ .md-button .md-button--primary }
 [Get started](getting-started.md){ .md-button }
@@ -38,6 +37,10 @@ The [demo report](demo/index.html) is rebuilt from the current code on every cha
    report still shows the failure, with sample rows.
 
 ## Quick start
+
+```bash
+pip install sqlmesh-observability
+```
 
 ```python
 # config.py

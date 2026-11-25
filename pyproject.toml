@@ -9,7 +9,7 @@ description = "Elementary-style data observability for SQLMesh projects"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
-requires-python = ">=3.9,<3.13"
+requires-python = ">=3.9"
 dependencies = [
     # TODO: pin to the first SQLMesh release that includes execution observations
     # (SQLMesh commit a8e3405f, after v0.236.4).

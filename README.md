@@ -4,8 +4,8 @@ Elementary-style data observability for [SQLMesh](https://github.com/TobikoData/
 projects. It installs as a package next to SQLMesh, is enabled from `config.py`, and needs no
 changes to SQLMesh itself.
 
-> **Status: pre-alpha.** It depends on SQLMesh's execution-observation API, which is on SQLMesh
-> `main` after `v0.236.4` but not in a release yet.
+> **Status: pre-alpha.** Expect breaking changes before 1.0. Requires Python 3.9 or newer and a
+> SQLMesh release with the execution-observation API (added after `v0.236.4`).
 
 ## What it does
 
@@ -21,6 +21,11 @@ changes to SQLMesh itself.
   failures and anomalies, through your own notification target.
 
 ## Quick start
+
+```bash
+pip install sqlmesh-observability
+pip install "sqlmesh-observability[serve]"   # optional: the web app
+```
 
 ```python
 # config.py
@@ -71,7 +76,7 @@ counts as prod, and a dev-only failure never shows up in prod.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e ../sqlmesh -e ".[dev]"     # a SQLMesh checkout with the observer API
+pip install -e ".[dev]"
 scripts/ci.sh                             # everything a change must pass
 ```
 
@@ -83,7 +88,8 @@ scripts/ci.sh                             # everything a change must pass
 
 `tests/test_e2e.py` runs one prod-shaped history through every part of the package.
 [docs/verification.md](docs/verification.md) maps each SQLMesh behavior the package depends on to
-the test that pins it. See [CONTRIBUTING.md](CONTRIBUTING.md) for commit rules.
+the test that pins it. See [CONTRIBUTING.md](CONTRIBUTING.md) for commit rules and
+[AGENTS.md](AGENTS.md) for guidance aimed at coding agents.
 
 ## License
 

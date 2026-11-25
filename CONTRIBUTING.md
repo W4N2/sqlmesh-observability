@@ -25,8 +25,12 @@ The hosted repository will enforce this with branch protection ("Require signed 
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e ../sqlmesh -e ".[dev]"   # until the observer API ships in a SQLMesh release
-ruff check . && ruff format --check .
-mypy src
-pytest
+pip install -e ".[dev]"
+scripts/ci.sh    # lint, format, types, Python 3.9 syntax, and tests
 ```
+
+To test against an unreleased SQLMesh, install a local checkout first
+(`pip install -e /path/to/sqlmesh -e ".[dev]"`); `scripts/test-against-sqlmesh-main.sh` runs the
+suite against SQLMesh `main`.
+
+See [AGENTS.md](AGENTS.md) for the project's design rules.

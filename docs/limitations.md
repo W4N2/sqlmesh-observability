@@ -1,7 +1,7 @@
 # Known limitations
 
-- **No SQLMesh release has the required API yet.** The package needs SQLMesh's
-  execution-observation API, which is on `main` after `v0.236.4` and not yet released.
+- **SQLMesh version.** The package needs SQLMesh's execution-observation API, added after
+  `v0.236.4`. Older SQLMesh versions are not supported.
 - **Python config only.** `install()` runs from `config.py`. SQLMesh does not support this from
   YAML config.
 - **`sqlmesh audit` is not captured.** It runs outside SQLMesh's observer. An audit-only plan

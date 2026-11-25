@@ -57,7 +57,7 @@ sqlmesh-observe serve [shared options] [--host HOST] [--port PORT]
 ```
 
 Runs the read-only web app with uvicorn. The defaults are `--host 127.0.0.1` and `--port 8000`.
-It needs the `serve` extra (`pip install 'sqlmesh-observability[serve]'`). Without it, the command
+It needs the `serve` extra (`pip install "sqlmesh-observability[serve]"`). Without it, the command
 exits 1 and says so. See [Report and app](report.md#web-app).
 
 ## `monitor`

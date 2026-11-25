@@ -4,23 +4,28 @@ This guide adds observability to an existing SQLMesh project, runs a plan, and o
 
 ## Requirements
 
-- Python 3.9 to 3.12.
-- A SQLMesh build with the execution-observation API. It is on SQLMesh `main` after `v0.236.4`
-  (commit `a8e3405f`) and is not in a release yet.
+- Python 3.9 or newer.
+- SQLMesh with the execution-observation API, added after `v0.236.4`. Installing the package
+  pulls in a compatible SQLMesh.
 - A project configured in Python (`config.py`). The package hooks in from Python config, and
   SQLMesh does not support this from YAML config.
 
 ## 1. Install
 
-The package is not on PyPI yet. Install it from a checkout, next to a SQLMesh build that has the
-API:
+Install it into the same environment as SQLMesh:
 
 ```bash
-pip install -e /path/to/sqlmesh            # a SQLMesh checkout at or after a8e3405f
-pip install -e /path/to/sqlmesh-observability
-# for the web app:
-pip install -e '/path/to/sqlmesh-observability[serve]'
+pip install sqlmesh-observability
 ```
+
+The web app (`sqlmesh-observe serve`) needs Starlette and uvicorn, which come with the `serve`
+extra:
+
+```bash
+pip install "sqlmesh-observability[serve]"
+```
+
+The package installs the `sqlmesh-observe` command.
 
 ## 2. Enable it in `config.py`
 
