@@ -19,7 +19,7 @@ git config commit.gpgsign true
 git commit -S -s -m "..."
 ```
 
-The hosted repository will enforce this with branch protection ("Require signed commits") and a DCO check on pull requests.
+The `ci` workflow fails a pull request when any of its commits has no `Signed-off-by:` line for its author. Cryptographic signing is not enforced yet.
 
 ## Development
 
