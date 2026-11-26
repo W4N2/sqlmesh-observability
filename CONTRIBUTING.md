@@ -19,7 +19,7 @@ git config commit.gpgsign true
 git commit -S -s -m "..."
 ```
 
-The `ci` workflow fails a pull request when any of its commits has no `Signed-off-by:` line for its author. Cryptographic signing is not enforced yet.
+The [DCO GitHub App](https://github.com/apps/dco) fails a pull request when any of its commits has no `Signed-off-by:` line. Cryptographic signing is not enforced yet.
 
 ## Development
 
