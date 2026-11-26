@@ -218,11 +218,12 @@
 
   // ---------------------------------------------------------------- charts
 
-  function niceTicks(lo, hi, count) {
+  function niceTicks(lo, hi, count, integer) {
     if (lo === hi) { var pad = Math.abs(lo) * 0.1 || 1; lo -= pad; hi += pad; }
     var step = Math.pow(10, Math.floor(Math.log10((hi - lo) / count)));
     var err = (hi - lo) / count / step;
     step *= err >= 7.5 ? 10 : err >= 3.5 ? 5 : err >= 1.5 ? 2 : 1;
+    if (integer) step = Math.max(1, Math.round(step));
     var start = Math.floor(lo / step) * step, end = Math.ceil(hi / step) * step, ticks = [];
     for (var v = start; v <= end + step / 2; v += step) ticks.push(+v.toPrecision(12));
     return ticks;
@@ -233,7 +234,7 @@
     var W = Math.max(host.clientWidth || 0, 260), H = o.height || 180;
     var lo = Math.min.apply(null, o.ys), hi = Math.max.apply(null, o.ys);
     if (o.zero) lo = Math.min(0, lo);
-    var ticks = niceTicks(lo, hi, 4);
+    var ticks = niceTicks(lo, hi, 4, o.integer);
     var left = 12 + 7 * Math.max.apply(null, ticks.map(function (t) { return compact(t).length; }));
     var M = { l: left, r: 10, t: 10, b: 24 };
     var t0 = Math.min.apply(null, o.times), t1 = Math.max.apply(null, o.times);
@@ -366,7 +367,7 @@
     var times = rows.map(function (r) { return time(D.dates[r[0]]); });
     var ys = rows.map(function (r) { return r[1]; });
     var spanDays = Math.max(1, Math.round((Math.max.apply(null, times) - Math.min.apply(null, times)) / 864e5) + 1);
-    var f = frame(host, { times: times, ys: ys.concat([0, 1]), zero: true, height: o.height || 150, padTime: 432e5 });
+    var f = frame(host, { times: times, ys: ys.concat([0, 1]), zero: true, integer: true, height: o.height || 150, padTime: 432e5 });
     var plot = f.W - f.M.l - f.M.r;
     var bw = Math.max(2, Math.min(18, (plot / spanDays) * 0.66));
     var bars = "", points = [];
