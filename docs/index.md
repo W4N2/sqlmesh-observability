@@ -31,10 +31,14 @@ The [demo report](demo/index.html) is rebuilt from the current code on every cha
 
 1. Fifteen days of orders and customers, all passing.
 2. Day 16 brings an order volume spike, 300 null statuses, and a jump in average amount. The
-   passive monitors flag all three as anomalies, and a non-blocking `not_null` audit fails.
+   passive monitors flag all three as anomalies, and the non-blocking `volume_anomaly` and
+   `not_null` audits fail.
 3. A forward-only change adds a `channel` column to orders. The schema monitor records it.
 4. A new `payments` model fails its blocking `not_null` audit, so prod is not promoted. The
    report still shows the failure, with sample rows.
+
+The [1,500-model demo](demo/scale.html) shows the report at scale: seeded data for 1,500 models
+across 15 schemas and 20 owners, with 90 days of history cut to the latest 30 intervals.
 
 ## Quick start
 

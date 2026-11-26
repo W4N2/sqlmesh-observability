@@ -46,7 +46,7 @@ def _report(args: argparse.Namespace) -> int:
             "read; the report shows only the latest invocation that targeted it.",
             file=sys.stderr,
         )
-    written = write_report(data, args.output)
+    written = write_report(data, args.output, history=args.history)
     print(f"wrote {written}")
     return 0
 
@@ -62,6 +62,7 @@ def _serve(args: argparse.Namespace) -> int:
             gateway=args.gateway,
             schema=args.schema,
             environment=args.environment,
+            history=args.history,
         )
     except ImportError:
         print(f"sqlmesh-observe: {SERVE_EXTRA_HINT}", file=sys.stderr)
@@ -108,6 +109,17 @@ def _add_source_options(command: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_history_option(command: argparse.ArgumentParser) -> None:
+    from sqlmesh_observability.payload import DEFAULT_HISTORY
+
+    command.add_argument(
+        "--history",
+        type=int,
+        default=DEFAULT_HISTORY,
+        help=f"Intervals of history to keep per model and metric (default: {DEFAULT_HISTORY}).",
+    )
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="sqlmesh-observe")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -125,6 +137,7 @@ def _parser() -> argparse.ArgumentParser:
         "report", help="Generate a self-contained static HTML observability report."
     )
     _add_source_options(report)
+    _add_history_option(report)
     report.add_argument(
         "-o",
         "--output",
@@ -137,6 +150,7 @@ def _parser() -> argparse.ArgumentParser:
         "serve", help="Serve the report as a read-only web app (needs the [serve] extra)."
     )
     _add_source_options(serve)
+    _add_history_option(serve)
     serve.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1).")
     serve.add_argument("--port", type=int, default=8000, help="Port (default: 8000).")
     serve.set_defaults(handler=_serve)

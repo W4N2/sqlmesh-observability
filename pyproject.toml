@@ -45,7 +45,7 @@ sqlmesh-observe = "sqlmesh_observability.cli:entrypoint"
 where = ["src"]
 
 [tool.setuptools.package-data]
-sqlmesh_observability = ["audits/*.sql"]
+sqlmesh_observability = ["audits/*.sql", "web/*.js", "web/*.css"]
 
 [tool.setuptools_scm]
 fallback_version = "0.0.0"

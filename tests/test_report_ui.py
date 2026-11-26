@@ -1,7 +1,8 @@
-"""Tests: report charts, health strips, sample tables, metadata.
+"""Tests: chart data, health strips, sample rows, metadata, and the offline page.
 
-HTML is checked with stdlib ``html.parser``;
-no browser and no full-HTML snapshots.
+The page draws charts in the browser from the embedded payload, so these tests check the payload
+and the HTML fallback with stdlib ``html.parser``. Drawing is checked in a browser against the
+demo report.
 """
 
 from __future__ import annotations
@@ -21,6 +22,36 @@ from test_report import (  # noqa: F401  (collector is a fixture)
     _write_model,
     collector,
 )
+from test_report_data import decode
+
+
+class _Text(HTMLParser):
+    """Visible text per element id, outside scripts and styles."""
+
+    def __init__(self, document: str) -> None:
+        super().__init__()
+        self.sections: t.Dict[str, t.List[str]] = {}
+        self._ids: t.List[t.Optional[str]] = []
+        self._skip = 0
+        self.feed(document)
+
+    def handle_starttag(self, tag: str, attrs: t.List[t.Tuple[str, t.Optional[str]]]) -> None:
+        if tag in ("script", "style"):
+            self._skip += 1
+        self._ids.append(dict(attrs).get("id"))
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("script", "style"):
+            self._skip -= 1
+        if self._ids:
+            self._ids.pop()
+
+    def handle_data(self, data: str) -> None:
+        if self._skip or not data.strip():
+            return
+        for elem_id in self._ids:
+            if elem_id:
+                self.sections.setdefault(elem_id, []).append(data.strip())
 
 
 class Element(t.NamedTuple):
@@ -105,9 +136,8 @@ def _spike_project(project: Path, probe: Probe) -> None:
 
 
 @pytest.mark.usefixtures("collector")
-def test_report_renders_svg_anomaly_chart_with_band_and_markers(
-    project: Path, probe: Probe
-) -> None:
+def test_report_carries_anomaly_series_with_band_and_text(project: Path, probe: Probe) -> None:
+    from sqlmesh_observability.payload import undelta
     from sqlmesh_observability.reader import load_report_data
     from sqlmesh_observability.report import render_report
 
@@ -116,23 +146,18 @@ def test_report_renders_svg_anomaly_chart_with_band_and_markers(
     (series,) = data.models[0].metrics
     assert series.threshold == 3.0
 
-    page = _Elements(render_report(data))
-    charts = [e for e in page.find("svg", "chart")]
-    assert len(charts) == 1
-    assert "row_count" in charts[0].attrs.get("aria-label", "") or "Row count" in charts[0].title
-
-    def in_chart(element: Element) -> bool:
-        return ".chart" in element.ancestors
-
-    assert [e for e in page.find("path", "band") if in_chart(e)]
-    assert [e for e in page.find("path", "line") if in_chart(e)]
-    points = [e for e in page.find("circle", "point") if in_chart(e)]
-    assert len(points) == 9
-    (anomaly,) = [e for e in page.find("circle", "anomaly") if in_chart(e)]
-    assert anomaly.title.startswith("Anomaly") and "2024-01-09" in anomaly.title
-    # Not color alone: the anomaly is also listed as text next to the chart.
-    notes = [e for e in page.find("li", "anomaly-note")]
-    assert notes
+    document = render_report(data)
+    payload = decode(document)
+    (model,) = payload["models"]
+    ((metric, column, threshold, dates, values, means, sds, flags),) = model["m"]
+    assert payload["metrics"][metric] == "row_count" and column == "" and threshold == 3.0
+    assert len(values) == 9
+    assert [payload["dates"][d] for d in undelta(dates)][-1] == "2024-01-09"
+    assert flags[-1] & 1 and not any(f & 1 for f in flags[:-1])
+    assert means[-1] is not None and sds[-1] is not None  # the expected band
+    # Not color alone: the anomaly is listed as text with its value and expected range.
+    text = " ".join(_Text(document).sections.get("overview-anomalies", []))
+    assert "row_count" in text and "2024-01-09" in text and "expected" in text
 
 
 @pytest.mark.usefixtures("collector")
@@ -172,11 +197,17 @@ def test_report_renders_interval_health_strip_and_duration_series(
     }
     assert model.runs and all(r.duration_ms is not None for r in model.runs)
 
-    page = _Elements(render_report(data))
-    cells = page.find("rect", "cell")
-    assert {c.attrs.get("data-status") for c in cells} == {"pass", "fail"}
-    assert any("2024-01-02" in c.title and "fail" in c.title for c in cells)
-    assert page.find("path", "duration")
+    from sqlmesh_observability.payload import undelta
+
+    (stored,) = decode(render_report(data))["models"]
+    dates, codes = stored["h"]
+    days = undelta(dates)
+    payload = decode(render_report(data))
+    assert {(payload["dates"][d], c) for d, c in zip(days, codes)} == {
+        ("2024-01-01", 0),
+        ("2024-01-02", 2),
+    }
+    assert len(stored["r"][1]) == 2 and all(ms is not None for ms in stored["r"][1])
 
 
 @pytest.mark.usefixtures("collector")
@@ -194,17 +225,12 @@ def test_report_renders_structured_sample_table(project: Path, probe: Probe) -> 
         _plan(context)
     context.close()
 
-    page = _Elements(render_report(load_report_data(project)))
-    tables = [e for e in page.find("table", "samples")]
-    assert tables
-    headers = [e for e in page.find("th") if ".samples" in e.ancestors]
-    rows = [e for e in page.find("tr") if ".samples" in e.ancestors]
-    header_text = render_report(load_report_data(project))
-    assert re.search(r'<table class="samples">.*?<th>ds</th><th>id</th>', header_text, re.S)
-    assert headers
-    assert page.find("details", "sql")  # rendered SQL is collapsible
-    # Two sampled rows per incident, plus the header row, per sample table.
-    assert len(rows) == 3 * len(tables)
+    payload = decode(render_report(load_report_data(project)))
+    assert payload["incidents"]
+    for incident in payload["incidents"]:
+        assert incident["sql"]
+        assert len(incident["samples"]) == 2
+        assert all(list(row) == ["ds", "id"] for row in incident["samples"])
 
 
 @pytest.mark.usefixtures("collector")
@@ -238,9 +264,7 @@ def test_report_hydrates_unpromoted_snapshot_metadata(project: Path, probe: Prob
 
 
 @pytest.mark.usefixtures("collector")
-def test_report_loads_no_external_assets_and_filters_work_without_js(
-    project: Path, probe: Probe
-) -> None:
+def test_report_loads_no_external_assets_and_has_a_fallback(project: Path, probe: Probe) -> None:
     from sqlmesh_observability.reader import load_report_data
     from sqlmesh_observability.report import render_report
 
@@ -250,8 +274,8 @@ def test_report_loads_no_external_assets_and_filters_work_without_js(
     assert "@import" not in html
 
     page = _Elements(html)
-    # Everything is visible without JavaScript: nothing starts hidden.
-    assert not [e for e in page.elements if "hidden" in e.attrs]
-    cards = [e for e in page.find("article") if "data-model" in e.attrs]
-    assert cards and all("data-status" in e.attrs for e in cards)
-    assert page.find("nav", "sidebar")
+    # Without JavaScript the fallback summary is shown; nothing in it starts hidden.
+    fallback = [e for e in page.elements if "#fallback" in e.ancestors]
+    assert fallback and not [e for e in fallback if "hidden" in e.attrs]
+    assert page.find("div") and [e for e in page.elements if e.attrs.get("id") == "app"]
+    assert decode(html)["models"]

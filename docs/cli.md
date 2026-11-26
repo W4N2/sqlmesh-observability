@@ -42,10 +42,12 @@ package to pick up new or changed audits.
 ## `report`
 
 ```bash
-sqlmesh-observe report [shared options] [-o OUTPUT]
+sqlmesh-observe report [shared options] [-o OUTPUT] [--history N]
 ```
 
 Writes the report to `OUTPUT` (default `report.html`), creating parent directories if needed.
+`--history` sets how many of each model's latest intervals the page keeps (default 30); see
+[History window](report.md#history-window).
 Exits 1 if the schema has no `audit_results` table. If SQLMesh state for the environment cannot be
 read, the report still writes, prints a warning on stderr, and shows only the latest invocation
 that targeted the environment. See [Report and app](report.md).
@@ -53,10 +55,11 @@ that targeted the environment. See [Report and app](report.md).
 ## `serve`
 
 ```bash
-sqlmesh-observe serve [shared options] [--host HOST] [--port PORT]
+sqlmesh-observe serve [shared options] [--host HOST] [--port PORT] [--history N]
 ```
 
-Runs the read-only web app with uvicorn. The defaults are `--host 127.0.0.1` and `--port 8000`.
+Runs the read-only web app with uvicorn. The defaults are `--host 127.0.0.1`, `--port 8000`, and
+`--history 30`.
 It needs the `serve` extra (`pip install "sqlmesh-observability[serve]"`). Without it, the command
 exits 1 and says so. See [Report and app](report.md#web-app).
 

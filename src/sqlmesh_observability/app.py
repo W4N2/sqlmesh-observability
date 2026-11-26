@@ -1,9 +1,9 @@
 """``sqlmesh-observe serve``: a read-only ASGI app over the observability report.
 
-Every route reads the warehouse log and SQLMesh state through ``load_report_data`` and renders
-the same document as ``sqlmesh-observe report``, opened on the requested model or incident. Only
-GET (and HEAD) routes exist. Nothing here runs a model, applies a plan, loads a ``Context``, or
-writes.
+Every route reads the warehouse log and SQLMesh state through ``load_report_data`` and returns
+the same page as ``sqlmesh-observe report``, opened on the requested model or incident, or the
+page's JSON payload (``/data.json``). Only GET (and HEAD) routes exist. Nothing here runs a
+model, applies a plan, loads a ``Context``, or writes.
 
 Starlette is an optional dependency (``sqlmesh-observability[serve]``), imported inside
 :func:`create_app`.
@@ -67,16 +67,20 @@ def create_app(
     gateway: t.Optional[str] = None,
     schema: t.Optional[str] = None,
     environment: str = "prod",
+    history: t.Optional[int] = None,
 ) -> "Starlette":
     """Build the read-only app for the project whose ``config.py`` is in ``path``."""
     from starlette.applications import Starlette
-    from starlette.responses import HTMLResponse
+    from starlette.responses import HTMLResponse, Response
     from starlette.routing import Route
 
+    from sqlmesh_observability.payload import DEFAULT_HISTORY, build_payload, encode
     from sqlmesh_observability.reader import MissingAuditTableError, load_report_data
-    from sqlmesh_observability.report import _incident_anchor, _model_anchor, render_report
+    from sqlmesh_observability.report import incident_route, model_route, render_payload
 
-    def page(request: "Request", pick: t.Callable[["ReportData"], t.Optional[str]]) -> "Response":
+    keep = DEFAULT_HISTORY if history is None else history
+
+    def load() -> t.Union["Response", t.Tuple["ReportData", t.Dict[str, t.Any]]]:
         # Runs on the event loop's thread, not Starlette's threadpool: hydrating snapshots from
         # state can start SQLMesh's fork-based process pool, and forking from a worker thread
         # crashes on macOS. Requests are therefore served one at a time.
@@ -86,22 +90,32 @@ def create_app(
             )
         except MissingAuditTableError as error:
             return HTMLResponse(_message_page(503, "No observability data", str(error)), 503)
-        start = pick(data)
+        return data, build_payload(data, history=keep)
+
+    def page(
+        request: "Request",
+        pick: t.Callable[["ReportData", t.Dict[str, t.Any]], t.Optional[str]],
+    ) -> "Response":
+        loaded = load()
+        if not isinstance(loaded, tuple):
+            return loaded
+        data, payload = loaded
+        start = pick(data, payload)
         if start is None:
             return HTMLResponse(
                 _message_page(404, "Not found", f"Nothing in scope for {request.url.path}."), 404
             )
-        return HTMLResponse(render_report(data, start=start or None))
+        return HTMLResponse(render_payload(payload, start=start or None))
 
     async def overview(request: "Request") -> "Response":
-        return page(request, lambda data: "")
+        return page(request, lambda data, payload: "")
 
     async def model(request: "Request") -> "Response":
         name = request.path_params["name"]
 
-        def pick(data: "ReportData") -> t.Optional[str]:
+        def pick(data: "ReportData", payload: t.Dict[str, t.Any]) -> t.Optional[str]:
             found = find_model(data, name)
-            return _model_anchor(found.model_name) if found else None
+            return model_route(found.model_name) if found else None
 
         return page(request, pick)
 
@@ -109,15 +123,30 @@ def create_app(
         invocation_id = request.path_params["invocation_id"]
         audit_name = request.path_params["audit_name"]
 
-        def pick(data: "ReportData") -> t.Optional[str]:
-            found = find_incident(data, invocation_id, audit_name)
-            return _incident_anchor(found) if found else None
+        def pick(data: "ReportData", payload: t.Dict[str, t.Any]) -> t.Optional[str]:
+            if find_incident(data, invocation_id, audit_name) is None:
+                return None
+            matches = [
+                (stored.get("started_at") or "", index)
+                for index, stored in enumerate(payload["incidents"])
+                if stored["invocation"] == invocation_id
+                and payload["audits"][stored["use"]][0] == audit_name
+            ]
+            # Outside the retained history window: open the incident list instead.
+            return incident_route(max(matches)[1]) if matches else "incidents"
 
         return page(request, pick)
+
+    async def data_json(request: "Request") -> "Response":
+        loaded = load()
+        if not isinstance(loaded, tuple):
+            return loaded
+        return Response(encode(loaded[1]), media_type="application/json")
 
     return Starlette(
         routes=[
             Route("/", overview, methods=["GET"]),
+            Route("/data.json", data_json, methods=["GET"]),
             Route("/models/{name:path}", model, methods=["GET"]),
             Route("/incidents/{invocation_id}/{audit_name}", incident, methods=["GET"]),
         ]

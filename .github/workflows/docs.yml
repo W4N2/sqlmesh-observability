@@ -40,7 +40,9 @@ jobs:
           python -m pip install -e ".[docs]"
 
       - name: Build the demo report
-        run: python scripts/build_demo.py docs/demo/index.html
+        run: |
+          python scripts/build_demo.py docs/demo/index.html
+          python scripts/build_demo.py --synthetic 1500 docs/demo/scale.html
 
       - name: Build the site
         run: mkdocs build --strict

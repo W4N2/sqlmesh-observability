@@ -184,6 +184,8 @@ class ReportData:
     state_gateway: t.Optional[str] = None
     anomalies: t.Tuple[MetricAnomaly, ...] = ()
     invocations: t.Tuple["InvocationRecord", ...] = ()  # newest first
+    # Passive monitors configured in install(): any of volume, freshness, schema, columns.
+    monitors: t.Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -973,6 +975,7 @@ def _build_report_data(
     extra_owners: t.Optional[t.Mapping[str, t.Optional[str]]] = None,
     extra_columns: t.Optional[t.Mapping[str, t.Tuple[t.Tuple[str, str], ...]]] = None,
     invocations: t.Sequence[InvocationRecord] = (),
+    monitors: t.Tuple[str, ...] = (),
 ) -> ReportData:
     by_model: t.Dict[str, t.List[AuditRecord]] = {}
     for record in records:
@@ -1067,7 +1070,19 @@ def _build_report_data(
         state_gateway=state_info.gateway if state_info else None,
         anomalies=tuple(anomalies),
         invocations=_with_counts(invocations, runs, records),
+        monitors=monitors,
     )
+
+
+def _configured_monitors(settings: t.Any) -> t.Tuple[str, ...]:
+    """Names of the passive monitors ``install(monitors=...)`` turned on, in a fixed order."""
+    on = {
+        "volume": settings.volume is not None,
+        "freshness": settings.freshness is not None,
+        "schema": bool(settings.schema),
+        "columns": bool(settings.columns),
+    }
+    return tuple(name for name, enabled in on.items() if enabled)
 
 
 def load_report_data(
@@ -1178,4 +1193,5 @@ def load_report_data_for(
         extra_owners=extra_owners,
         extra_columns=extra_columns,
         invocations=invocations,
+        monitors=_configured_monitors(monitor_settings),
     )

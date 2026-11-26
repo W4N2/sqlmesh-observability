@@ -16,7 +16,11 @@
   `Scheduler` call, may inherit that stale environment.
 - **`query_sql` and samples** use the default gateway's dialect.
 - **Blocked prod plans** show in the report only while they are the latest prod invocation.
-- **No time window.** The report and `monitor` read each in-scope version's full history.
+- **JavaScript for detail.** Without JavaScript the report shows only the status, the counts,
+  and the open issues. Model pages, test results, runs, and charts are drawn in the browser.
+- **History window.** The report keeps each model's latest 30 intervals (`--history`). The
+  report and `monitor` still read each in-scope version's full history to score anomalies, and
+  there is no date-range picker.
 - **Time zones.** Audit day buckets use the warehouse session time zone. Freshness compares
   naive timestamps with SQLMesh's UTC execution time.
 - **Alerts:** see [Alerts, things to know](alerts.md#things-to-know).

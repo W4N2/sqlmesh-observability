@@ -20,6 +20,7 @@ from test_report import (  # noqa: F401  (collector is a fixture)
     _write_model,
     collector,
 )
+from test_report_data import decode
 from test_report_ui import _Elements
 
 if t.TYPE_CHECKING:
@@ -82,38 +83,55 @@ def test_overview_returns_failing_audit(project: Path, probe: Probe) -> None:
 
 
 @pytest.mark.usefixtures("collector")
-def test_pass_only_model_page_has_no_failure_plate(project: Path, probe: Probe) -> None:
-    from sqlmesh_observability.report import _model_anchor
+def test_pass_only_model_route_opens_the_model(project: Path, probe: Probe) -> None:
+    from sqlmesh_observability.report import model_route
 
     _failing_prod(project, probe)
     client = _client(project)
     response = client.get("/models/obs.events")
     assert response.status_code == 200
 
-    elements = _Elements(response.text)
-    (article,) = [e for e in elements.find("article", "model") if "events" in e.attrs["data-model"]]
-    anchor = article.attrs["id"]
-    assert anchor == _model_anchor(article.attrs["data-model"])
-    assert _body_start(response.text) == anchor
-    assert article.attrs["data-status"] == "pass"
-    assert not [e for e in elements.find("div", "plate") if "#" + anchor in e.ancestors]
+    payload = decode(response.text)
+    (events,) = [m for m in payload["models"] if m["n"].replace('"', "").endswith(".events")]
+    assert _body_start(response.text) == model_route(events["n"])
+    assert events["st"] == "pass"
 
     # The full quoted name and the unquoted name resolve to the same page.
-    quoted = client.get("/models/" + article.attrs["data-model"])
-    assert quoted.status_code == 200 and _body_start(quoted.text) == anchor
+    quoted = client.get("/models/" + events["n"])
+    assert quoted.status_code == 200 and _body_start(quoted.text) == model_route(events["n"])
 
 
 @pytest.mark.usefixtures("collector")
-def test_incident_route_opens_on_the_card(project: Path, probe: Probe) -> None:
+def test_incident_route_opens_the_incident(project: Path, probe: Probe) -> None:
     from sqlmesh_observability.reader import load_report_data
-    from sqlmesh_observability.report import _incident_anchor
+    from sqlmesh_observability.report import incident_route
 
     _failing_prod(project, probe)
     incident = load_report_data(project).incidents[0]
     response = _client(project).get(f"/incidents/{incident.invocation_id}/{incident.audit_name}")
     assert response.status_code == 200
-    assert _body_start(response.text) == _incident_anchor(incident)
-    assert "Sample rows" in response.text
+    payload = decode(response.text)
+    start = _body_start(response.text)
+    assert start.startswith("incidents?i=")
+    opened = payload["incidents"][int(start.split("=")[1])]
+    assert start == incident_route(int(start.split("=")[1]))
+    assert opened["invocation"] == incident.invocation_id
+    assert payload["audits"][opened["use"]][0] == incident.audit_name
+    assert opened["samples"]
+
+
+@pytest.mark.usefixtures("collector")
+def test_data_endpoint_matches_the_embedded_payload(project: Path, probe: Probe) -> None:
+    _failing_prod(project, probe)
+    client = _client(project)
+    response = client.get("/data.json")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    page = decode(client.get("/").text)
+    data = response.json()
+    data.pop("generated_at"), page.pop("generated_at")
+    assert data == page
+    assert client.post("/data.json").status_code == 405
 
 
 @pytest.mark.usefixtures("collector")
@@ -175,8 +193,10 @@ def test_overview_shows_schema_change_and_column_anomaly(project: Path, probe: P
     response = _client(project).get("/")
     assert response.status_code == 200
     assert "added_col" in response.text
-    assert "Null rate (status)" in response.text
+    assert "null_rate (status)" in response.text
     assert 'id="overview-anomalies"' in response.text
+    payload = decode(response.text)
+    assert any(x[0] == "added_col" for m in payload["models"] for x in m["x"])
 
 
 def test_serve_without_starlette_prints_the_extra(
@@ -206,10 +226,10 @@ def test_serve_runs_uvicorn_with_the_app(monkeypatch: pytest.MonkeyPatch, tmp_pa
 @pytest.mark.usefixtures("collector")
 def test_static_report_has_no_start_view(project: Path, probe: Probe) -> None:
     from sqlmesh_observability.reader import load_report_data
-    from sqlmesh_observability.report import _model_anchor, render_report
+    from sqlmesh_observability.report import model_route, render_report
 
     _failing_prod(project, probe)
     data = load_report_data(project)
     assert "data-start" not in _Elements(render_report(data)).find("body")[0].attrs
-    anchor = _model_anchor(data.models[0].model_name)
+    anchor = model_route(data.models[0].model_name)
     assert _body_start(render_report(data, start=anchor)) == anchor

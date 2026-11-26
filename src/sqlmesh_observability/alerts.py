@@ -82,9 +82,9 @@ def _rows(count: t.Optional[int]) -> str:
 
 
 def _audit_alert(record: "AuditRecord", owner: t.Optional[str]) -> Alert:
-    from sqlmesh_observability.report import _args_text
+    from sqlmesh_observability.textfmt import args_text
 
-    args = _args_text(record.args_json)
+    args = args_text(record.args_json)
     signal = f"{record.audit_name}({args})" if args else record.audit_name
     if record.status == "error":
         status, severity, detail = "audit error", _BLOCKING, record.error_message or ""
@@ -107,7 +107,8 @@ def _audit_alert(record: "AuditRecord", owner: t.Optional[str]) -> Alert:
 
 def candidates(data: "ReportData") -> t.List[Alert]:
     """Every failed or errored audit and every anomalous point in scope, old or new."""
-    from sqlmesh_observability.report import _expected, _num
+    from sqlmesh_observability.textfmt import expected_range as _expected
+    from sqlmesh_observability.textfmt import number as _num
 
     owners = {m.model_name: m.owner for m in data.models}
     found = [_audit_alert(r, owners.get(r.model_name)) for r in data.incidents]

@@ -289,6 +289,21 @@ class _SectionTextParser:
         self.tags_seen = tags_seen
 
 
+def _payload(document: str) -> t.Dict[str, t.Any]:
+    from test_report_data import decode
+
+    return decode(document)
+
+
+def _text(document: str) -> str:
+    """Everything a reader can see: the HTML fallback text plus the payload the page draws."""
+    return _SectionTextParser(document).all_text + " " + json.dumps(_payload(document))
+
+
+def _payload_model(payload: t.Dict[str, t.Any], leaf: str) -> t.Dict[str, t.Any]:
+    return next(m for m in payload["models"] if m["n"].replace('"', "").endswith("." + leaf))
+
+
 @pytest.mark.usefixtures("collector")
 def test_report_html_contains_failure(project: Path, probe: Probe) -> None:
     from sqlmesh.core.context import Context
@@ -332,24 +347,30 @@ def test_report_html_contains_failure(project: Path, probe: Probe) -> None:
     assert "not_null" in failures_text
     assert "events" not in failures_text
 
-    # Model history includes passing model, its owner, columns, and passing status.
-    models_text = parsed.sections["models"]
-    assert "events" in models_text
-    assert "analytics-team" in models_text
-    assert "pass" in models_text
-    assert "ds" in models_text and "id" in models_text
+    # Model history: the passing model, its owner, columns, and passing results per interval.
+    payload = _payload(html_doc)
+    events = _payload_model(payload, "events")
+    assert events["st"] == "pass"
+    assert payload["owners"][events["o"]] == "analytics-team"
+    assert [c[0] for c in events["c"]] == ["ds", "id"]
+    assert events["a"] and all(row[2] == 0 and row[4] == 1 for row in events["a"])
+    assert payload["audits"][events["a"][0][1]] == ["not_null", "columns := (id)"]
 
-    # Incident section carries full failure facts and sample rows.
-    incidents_text = parsed.sections["incidents"]
+    # The incident carries the full failure facts and the sample rows.
     incident = data.incidents[0]
-    assert "broken" in incidents_text
-    assert "not_null" in incidents_text
-    assert "5" in incidents_text
-    assert "2024-01-01" in incidents_text
-    assert incident.snapshot_id is not None and incident.snapshot_id in incidents_text
-    assert "SELECT" in incidents_text.upper()
-    assert "prod" in incidents_text
-    assert '"id": null' in incidents_text
+    stored = next(
+        i
+        for i in payload["incidents"]
+        if i["snapshot"] == incident.snapshot_id and i["interval"] == "2024-01-01"
+    )
+    assert payload["models"][stored["model"]]["n"].replace('"', "").endswith("broken")
+    assert payload["audits"][stored["use"]][0] == "not_null"
+    assert stored["violations"] == 5
+    assert stored["snapshot"] is not None
+    assert "SELECT" in stored["sql"].upper()
+    assert stored["environment"] == "prod"
+    assert stored["status"] == "fail" and stored["blocking"] is True
+    assert len(stored["samples"]) == 2 and all(row["id"] is None for row in stored["samples"])
 
 
 @pytest.mark.usefixtures("collector")
@@ -373,10 +394,12 @@ def test_report_html_omits_samples_when_none_stored(project: Path, probe: Probe)
 
     html_doc = render_report(load_report_data(project))
     parsed = _SectionTextParser(html_doc)
-    incidents_text = parsed.sections["incidents"]
-    assert "not_null_non_blocking" in incidents_text
-    assert "Sample rows" not in incidents_text
-    assert '"id": null' not in html_doc
+    assert "not_null_non_blocking" in parsed.sections["overview-warnings"]
+    payload = _payload(html_doc)
+    assert [payload["audits"][i["use"]][0] for i in payload["incidents"]] == [
+        "not_null_non_blocking"
+    ] * len(payload["incidents"])
+    assert payload["incidents"] and all(i["samples"] == [] for i in payload["incidents"])
 
 
 def test_report_html_escapes_untrusted_text_and_contains_no_script_tags() -> None:
@@ -423,12 +446,16 @@ def test_report_html_escapes_untrusted_text_and_contains_no_script_tags() -> Non
 
     html_doc = render_report(data)
     parsed = _SectionTextParser(html_doc)
-    # The only script is the report's own filter script; injected text stays text.
-    assert parsed.tags_seen.count("script") == 1
-    assert html_doc.count("<script") == 1 and '<script id="report-filters">' in html_doc
+    # The only scripts are the payload and the report's own script; injected text stays text.
+    assert parsed.tags_seen.count("script") == 2
+    assert html_doc.count("<script") == 2
+    assert '<script type="application/json" id="report-data">' in html_doc
+    assert '<script id="report-app">' in html_doc
     assert "img" not in parsed.tags_seen
-    assert "<script>alert(1)</script>" in parsed.all_text
-    assert "team<a&b>" in parsed.all_text
+    assert "<script>alert(1)</script>" in parsed.sections["overview-failures"]
+    payload = _payload(html_doc)
+    assert payload["owners"] == ["team<a&b>"]
+    assert payload["incidents"][0]["samples"] == [{"note": "<img src=x onerror=alert(1)>"}]
 
 
 # --- Task 4.1: CLI tests --------------------------------------------------------------------------
@@ -459,14 +486,14 @@ def test_report_defaults_to_prod(project: Path, probe: Probe, tmp_path: Path) ->
     prod_out = tmp_path / "prod.html"
     rc = main(["report", "--path", str(project), "--output", str(prod_out)])
     assert rc == 0
-    prod_text = _SectionTextParser(prod_out.read_text(encoding="utf-8")).all_text
+    prod_text = _text(prod_out.read_text(encoding="utf-8"))
     assert "not_null" in prod_text
     assert "accepted_values_non_blocking" not in prod_text
 
     dev_out = tmp_path / "dev.html"
     rc = main(["report", "--path", str(project), "--environment", "dev", "--output", str(dev_out)])
     assert rc == 0
-    dev_text = _SectionTextParser(dev_out.read_text(encoding="utf-8")).all_text
+    dev_text = _text(dev_out.read_text(encoding="utf-8"))
     assert "accepted_values_non_blocking" in dev_text
 
 
@@ -606,9 +633,10 @@ config = install(
     out = tmp_path / "inherited.html"
     rc = main(["report", "--path", str(root), "-o", str(out)])
     assert rc == 0
-    parsed = _SectionTextParser(out.read_text(encoding="utf-8"))
-    assert "custom_obs" in parsed.all_text
-    assert "not_null" in parsed.all_text
+    document = out.read_text(encoding="utf-8")
+    assert "custom_obs" in _SectionTextParser(document).all_text
+    assert _payload(document)["schema"] == "custom_obs"
+    assert ["not_null", "columns := (id)"] in _payload(document)["audits"]
 
 
 # --- Review fixes (2026-11-25) --------------------------------------------------------------------
@@ -654,8 +682,10 @@ def test_same_audit_with_different_args_stays_separate(project: Path, probe: Pro
     assert len(ids) == len(set(ids)), "duplicate element ids"
     parsed = _SectionTextParser(html_doc)
     assert "columns := (id)" in parsed.sections["overview-failures"]
-    models_text = parsed.sections["models"]
-    assert "columns := (id)" in models_text and "columns := (other)" in models_text
+    payload = _payload(html_doc)
+    (stored,) = payload["models"]
+    uses = {tuple(payload["audits"][row[1]]) for row in stored["a"]}
+    assert uses == {("not_null", "columns := (id)"), ("not_null", "columns := (other)")}
 
 
 @pytest.mark.usefixtures("collector")

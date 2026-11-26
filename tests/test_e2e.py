@@ -172,14 +172,32 @@ def test_e2e_prod_report_and_alert(project: Path, probe: Probe) -> None:
     assert [(a.metric_name, a.point.value) for a in data.anomalies] == [("row_count", 500.0)]
     summary = next(m for m in data.models if m.model_name.endswith('"summary"'))
     assert {a.environment for a in summary.audits} == {"dev"}, "v2 was built in dev, then promoted"
-    html = render_report(data)
-    assert "accepted_values_non_blocking" in html and "volume_anomaly" in html
+    from test_report_data import decode
 
-    # App.
+    payload = decode(render_report(data))
+
+    def leaf(index: int) -> str:
+        return payload["models"][index]["n"].split(".")[-1].strip('"')
+
+    stored = {(leaf(i["model"]), payload["audits"][i["use"]][0]) for i in payload["incidents"]}
+    assert ("summary", "accepted_values_non_blocking") in stored
+    assert ("daily", "volume_anomaly") in stored
+    assert not any(audit == "not_null" for _, audit in stored)
+    anomalies = [i for i in payload["issues"] if i["kind"] == "anomaly"]
+    assert [(leaf(i["model"]), i["signal"], i["value"]) for i in anomalies] == [
+        ("daily", "row_count", 500)
+    ]
+    daily = next(m for m in payload["models"] if m["n"].endswith('"daily"'))
+    assert daily["st"] == "warn"
+    assert {payload["audits"][row[1]][0] for row in daily["a"]} >= {"not_null", "volume_anomaly"}
+
+    # App: the same data, live.
     client = TestClient(create_app(project))
     overview = client.get("/")
     assert overview.status_code == 200
-    assert "accepted_values_non_blocking" in overview.text and "volume_anomaly" in overview.text
+    live = decode(overview.text)
+    live.pop("generated_at"), payload.pop("generated_at")
+    assert live == payload
     assert client.get("/models/obs.daily").status_code == 200
     assert client.post("/").status_code == 405
 

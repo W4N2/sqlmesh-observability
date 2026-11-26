@@ -4,19 +4,28 @@ Creates a throwaway DuckDB SQLMesh project, runs a short prod history through it
 sqlmesh-observability installed, and writes the static report:
 
     python scripts/build_demo.py docs/demo/index.html
+    python scripts/build_demo.py --synthetic 1500 docs/demo/scale.html
+    python scripts/build_demo.py --models 1500 --days 3 /tmp/scale-duckdb.html
+
+``--synthetic N`` skips SQLMesh and builds N models of seeded data with the test suite's scale
+fixture (``tests/scale_fixture.py``), for checking the report at size. ``--models N`` runs N
+small models through a real DuckDB project and prints how long reading the log takes.
 
 The history gives the report something to show:
 - 15 days of orders and customers, all passing.
-- Day 16: an order volume spike, many null statuses, and a jump in average amount.
+- Day 16: an order volume spike (the ``volume_anomaly`` audit fails, non-blocking), many null
+  statuses, and a jump in average amount.
 - A forward-only change that adds a column to orders (a schema change).
 - A new payments model whose blocking audit fails, so prod is not promoted.
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 import tempfile
+import time
 import typing as t
 from pathlib import Path
 
@@ -25,7 +34,10 @@ ORDERS = (
     "SELECT CAST(ds AS DATE) AS ds, id, status, amount, updated_at\n"
     "FROM raw.orders WHERE ds BETWEEN @start_ds AND @end_ds"
 )
-ORDERS_AUDITS = "not_null(columns := (id)), not_null_non_blocking(columns := (status))"
+ORDERS_AUDITS = (
+    "not_null(columns := (id)), not_null_non_blocking(columns := (status)), "
+    "volume_anomaly(time_column := ds, source := analytics.orders)"
+)
 
 CONFIG = """
 from sqlmesh.core.config import Config, DuckDBConnectionConfig, GatewayConfig, ModelDefaultsConfig
@@ -59,11 +71,13 @@ def _model(root: Path, name: str, body: str, audits: str, owner: str) -> None:
 def build(root: Path, output: Path) -> Path:
     from sqlmesh.core.context import Context
 
+    from sqlmesh_observability.audits import copy_audits
     from sqlmesh_observability.reader import load_report_data
     from sqlmesh_observability.report import write_report
 
     (root / "models").mkdir(parents=True)
     (root / "config.py").write_text(CONFIG.replace("__DB__", repr(str(root / "demo.duckdb"))))
+    copy_audits(root)
     _model(root, "analytics.orders", ORDERS, ORDERS_AUDITS, "commerce-team")
     _model(
         root,
@@ -129,17 +143,68 @@ def build(root: Path, output: Path) -> Path:
     return write_report(data, output)
 
 
+def build_synthetic(models: int, output: Path) -> Path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tests"))
+    from scale_fixture import build_scale_data
+
+    from sqlmesh_observability.report import write_report
+
+    return write_report(build_scale_data(n=models, days=90), output)
+
+
+def build_many(root: Path, output: Path, models: int, days: int) -> Path:
+    """``models`` small incremental models in 15 schemas, ``days`` daily intervals each."""
+    from sqlmesh.core.context import Context
+
+    from sqlmesh_observability.reader import load_report_data
+    from sqlmesh_observability.report import write_report
+
+    (root / "models").mkdir(parents=True)
+    (root / "config.py").write_text(CONFIG.replace("__DB__", repr(str(root / "demo.duckdb"))))
+    for i in range(models):
+        _model(
+            root,
+            f"mart_{i % 15:02d}.model_{i:04d}",
+            f"SELECT CAST(@start_ds AS DATE) AS ds, i AS id FROM range({10 + i % 7}) t(i)",
+            "not_null(columns := (id))",
+            f"team-{i % 20:02d}",
+        )
+    context = Context(paths=str(root))
+    end = f"2024-01-{days + 1:02d}"
+    started = time.monotonic()
+    context.plan("prod", auto_apply=True, no_prompts=True, execution_time=end)
+    context.close()
+    print(f"plan: {time.monotonic() - started:.1f} s")
+
+    started = time.monotonic()
+    data = load_report_data(root)
+    print(f"read: {time.monotonic() - started:.1f} s for {len(data.models)} models")
+    started = time.monotonic()
+    written = write_report(data, output)
+    print(f"render: {time.monotonic() - started:.1f} s")
+    return written
+
+
 def main(argv: t.Sequence[str]) -> int:
-    if len(argv) != 1:
-        print("usage: python scripts/build_demo.py OUTPUT.html", file=sys.stderr)
-        return 2
-    output = Path(argv[0]).resolve()
+    parser = argparse.ArgumentParser(prog="build_demo.py")
+    parser.add_argument("output")
+    parser.add_argument("--synthetic", type=int, metavar="N", help="N models of seeded data")
+    parser.add_argument("--models", type=int, metavar="N", help="N models through DuckDB")
+    parser.add_argument("--days", type=int, default=3, help="daily intervals for --models")
+    args = parser.parse_args(argv)
+    output = Path(args.output).resolve()
+    if args.synthetic:
+        print(f"wrote {build_synthetic(args.synthetic, output)}")
+        return 0
     previous = Path.cwd()
     with tempfile.TemporaryDirectory(prefix="sqlmesh-observe-demo-") as tmp:
         # Reading SQLMesh state writes a small cache into the working directory; keep it here.
         os.chdir(tmp)
         try:
-            written = build(Path(tmp) / "project", output)
+            if args.models:
+                written = build_many(Path(tmp) / "project", output, args.models, args.days)
+            else:
+                written = build(Path(tmp) / "project", output)
         finally:
             os.chdir(previous)
     print(f"wrote {written}")

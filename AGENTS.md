@@ -27,7 +27,10 @@ src/sqlmesh_observability/
   writer.py      writer thread: the package's tables, schema version, metrics after commit
   monitors.py    passive metric settings, collection, and read-time scoring
   reader.py      read side: loads config.py without a Context, reads the log and SQLMesh state
-  report.py      the HTML report; charts.py draws its inline SVG
+  payload.py     the report's data: one compact, versioned JSON payload (status decided here)
+  report.py      the page shell and the no-JavaScript fallback; inlines web/
+  web/           report.js and report.css: the browser renderer (views, tree, lists, charts)
+  textfmt.py     plain-text formatting shared by the report, payload, and alerts
   app.py         `serve`: the read-only Starlette app
   alerts.py      `monitor`: selection, owner grouping, watermark
   cli.py         the `sqlmesh-observe` command
@@ -84,6 +87,10 @@ scripts/         ci.sh (every check), build_demo.py (the site's demo report)
   change breaks it, fix the package or the contract test deliberately, never silently.
 - Keep `tests/test_e2e.py` passing: the warehouse log, report, app, and alerts must agree on one
   history.
+- Report tests check the decoded payload and the HTML fallback. Drawing happens in the browser:
+  check it against `python scripts/build_demo.py --synthetic 1500 out.html`. Payload changes
+  bump `SCHEMA_VERSION` in `payload.py` and `report.js` together, and the 1,500-model page must
+  stay under the size budget in `tests/test_report_data.py`.
 
 ## Commands
 

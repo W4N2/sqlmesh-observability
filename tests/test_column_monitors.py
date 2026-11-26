@@ -308,7 +308,7 @@ def test_column_null_rate_anomaly(tmp_path: Path) -> None:
 
     html = render_report(data)
     assert "null_rate" in html
-    assert "Null rate (status)" in html
+    assert "null_rate (status)" in html  # listed in the HTML fallback's anomalies
 
 
 def _report_data(project: OrdersProject, load: t.Callable[..., t.Any]) -> t.Any:
