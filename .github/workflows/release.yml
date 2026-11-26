@@ -1,0 +1,108 @@
+name: release
+
+# Publishes to PyPI when a version tag is pushed, for example `git tag v0.1.0a1 && git push origin
+# v0.1.0a1`. setuptools_scm turns the tag into the package version. Publishing uses PyPI trusted
+# publishing (no API token): PyPI trusts this file, `release.yml`, in W4N2/sqlmesh-observability
+# when it runs in the `pypi` environment.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  # The execution-observation API is not in a SQLMesh release yet; test against the same pinned
+  # main commit as the docs site.
+  SQLMESH_REF: 3df452cc9f47a435439cda087c3a419a1778b2b9
+  SQLMESH__DISABLE_ANONYMIZED_ANALYTICS: "1"
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "sqlmesh @ git+https://github.com/SQLMesh/sqlmesh@${SQLMESH_REF}"
+          python -m pip install -e ".[dev]"
+
+      - name: Lint
+        run: |
+          ruff check src tests scripts
+          ruff format --check src tests scripts
+
+      - name: Type check
+        run: mypy src
+
+      - name: Test
+        run: pytest -q -p no:warnings
+
+  build:
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # setuptools_scm reads the version from the tag
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Build the sdist and wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check --strict dist/*
+
+      - name: Check the version matches the tag
+        run: |
+          expected="${GITHUB_REF_NAME#v}"
+          wheel="$(ls dist/*.whl)"
+          actual="$(basename "$wheel" | cut -d- -f2)"
+          echo "tag ${GITHUB_REF_NAME} -> wheel ${actual}"
+          python - "$expected" "$actual" <<'EOF'
+          import sys
+          from packaging.version import Version
+
+          expected, actual = (Version(v) for v in sys.argv[1:])
+          if expected != actual:
+              sys.exit(f"wheel version {actual} does not match tag version {expected}")
+          EOF
+
+      - name: Check the wheel ships the report assets
+        run: |
+          python -m zipfile -l dist/*.whl | grep -q "sqlmesh_observability/web/report.js"
+          python -m zipfile -l dist/*.whl | grep -q "sqlmesh_observability/web/report.css"
+          python -m zipfile -l dist/*.whl | grep -q "sqlmesh_observability/audits/volume_anomaly.sql"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/sqlmesh-observability/
+    permissions:
+      id-token: write  # trusted publishing
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

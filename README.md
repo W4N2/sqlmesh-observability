@@ -45,7 +45,7 @@ sqlmesh-observe report -o report.html       # open the dashboard
 sqlmesh-observe init-audits                 # optional: add the anomaly audits to the project
 ```
 
-See [Getting started](docs/getting-started.md) for installation and a full walkthrough.
+See [Getting started](https://w4n2.github.io/sqlmesh-observability/getting-started/) for installation and a full walkthrough.
 
 **Docs site and live demo report:** https://w4n2.github.io/sqlmesh-observability/
 
@@ -53,15 +53,15 @@ See [Getting started](docs/getting-started.md) for installation and a full walkt
 
 | Guide | Covers |
 | --- | --- |
-| [Getting started](docs/getting-started.md) | Requirements, installation, first report |
-| [Configuration](docs/configuration.md) | Every `install()` argument, and what `install()` changes |
-| [CLI reference](docs/cli.md) | `init-audits`, `report`, `serve`, `monitor` |
-| [Anomaly audits](docs/audits.md) | `volume_anomaly`, `freshness_anomaly`, `column_anomaly` |
-| [Passive monitors](docs/monitors.md) | Volume, freshness, schema, and column metrics, and how they are scored |
-| [Report and app](docs/report.md) | What the dashboard shows, scope, and deploying `serve` |
-| [Alerts](docs/alerts.md) | `monitor`, notification targets, grouping, and delivery |
-| [Warehouse tables](docs/warehouse-tables.md) | The tables the package writes, and their columns |
-| [Known limitations](docs/limitations.md) | What isn't covered yet |
+| [Getting started](https://w4n2.github.io/sqlmesh-observability/getting-started/) | Requirements, installation, first report |
+| [Configuration](https://w4n2.github.io/sqlmesh-observability/configuration/) | Every `install()` argument, and what `install()` changes |
+| [CLI reference](https://w4n2.github.io/sqlmesh-observability/cli/) | `init-audits`, `report`, `serve`, `monitor` |
+| [Anomaly audits](https://w4n2.github.io/sqlmesh-observability/audits/) | `volume_anomaly`, `freshness_anomaly`, `column_anomaly` |
+| [Passive monitors](https://w4n2.github.io/sqlmesh-observability/monitors/) | Volume, freshness, schema, and column metrics, and how they are scored |
+| [Report and app](https://w4n2.github.io/sqlmesh-observability/report/) | What the dashboard shows, scope, and deploying `serve` |
+| [Alerts](https://w4n2.github.io/sqlmesh-observability/alerts/) | `monitor`, notification targets, grouping, and delivery |
+| [Warehouse tables](https://w4n2.github.io/sqlmesh-observability/warehouse-tables/) | The tables the package writes, and their columns |
+| [Known limitations](https://w4n2.github.io/sqlmesh-observability/limitations/) | What isn't covered yet |
 
 ## How it works
 
@@ -87,10 +87,10 @@ scripts/ci.sh                             # everything a change must pass
 - the test suite, against the installed SQLMesh and against SQLMesh `main`.
 
 `tests/test_e2e.py` runs one prod-shaped history through every part of the package.
-[docs/verification.md](docs/verification.md) maps each SQLMesh behavior the package depends on to
-the test that pins it. See [CONTRIBUTING.md](CONTRIBUTING.md) for commit rules and
-[AGENTS.md](AGENTS.md) for guidance aimed at coding agents.
+[docs/verification.md](https://w4n2.github.io/sqlmesh-observability/verification/) maps each SQLMesh behavior the package depends on to
+the test that pins it. See [CONTRIBUTING.md](https://github.com/W4N2/sqlmesh-observability/blob/main/CONTRIBUTING.md) for commit rules and
+[AGENTS.md](https://github.com/W4N2/sqlmesh-observability/blob/main/AGENTS.md) for guidance aimed at coding agents.
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Apache License 2.0. See [LICENSE](https://github.com/W4N2/sqlmesh-observability/blob/main/LICENSE) and [NOTICE](https://github.com/W4N2/sqlmesh-observability/blob/main/NOTICE).

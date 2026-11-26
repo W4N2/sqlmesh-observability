@@ -34,3 +34,19 @@ To test against an unreleased SQLMesh, install a local checkout first
 suite against SQLMesh `main`.
 
 See [AGENTS.md](AGENTS.md) for the project's design rules.
+
+## Releasing
+
+Releases are published to PyPI by `.github/workflows/release.yml` when a version tag is pushed.
+The tag sets the version (setuptools_scm), and PyPI trusted publishing authorizes the upload, so
+no API token is stored anywhere.
+
+```bash
+git tag -s v0.1.0a1 -m "v0.1.0a1"   # or -a if signing isn't set up
+git push origin v0.1.0a1
+```
+
+The workflow runs lint, types, and tests, builds the sdist and wheel, checks that the wheel's
+version matches the tag and that it ships the report and audit files, then publishes from the
+`pypi` GitHub environment. Use a pre-release tag (`a`, `b`, `rc`) until the package works against
+a released SQLMesh.
