@@ -243,7 +243,8 @@ class Writer:
         for name, columns in TABLES.items():
             adapter.create_table(self._table(name), columns, exists=True)
         version_table = self._table("schema_version")
-        current = adapter.fetchone(exp.select("MAX(version)").from_(version_table))[0]
+        row = adapter.fetchone(exp.select("MAX(version)").from_(version_table))
+        current = row[0] if row else None
         if current is None or int(current) < SCHEMA_VERSION:
             # Upgrades so far only add tables, which CREATE TABLE IF NOT EXISTS has just done.
             with adapter.transaction():

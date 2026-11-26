@@ -194,7 +194,9 @@ def _ensure_current_console_wrapped() -> None:
     wrap_console(get_console())
 
 
-class ObservabilityTarget(GenericNotificationTarget):
+# SQLMesh declares BaseNotificationTarget frozen but GenericNotificationTarget not, so mypy rejects
+# any subclass of it, frozen or not. At runtime the model is frozen through its base.
+class ObservabilityTarget(GenericNotificationTarget):  # type: ignore[misc]
     """Supplies environment and plan id per invocation, and closes it. Never raises."""
 
     notify_on: t.FrozenSet[NotificationEvent] = _LIFECYCLE_EVENTS

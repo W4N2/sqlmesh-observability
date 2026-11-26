@@ -203,6 +203,11 @@ def _ms_to_datetime(value: t.Optional[int]) -> t.Optional[datetime.datetime]:
     return datetime.datetime.fromtimestamp(value / 1000, tz=datetime.timezone.utc)
 
 
+def _first(row: t.Optional[t.Tuple[t.Any, ...]]) -> t.Any:
+    """The first value of a fetched row, or None when the query returned no row."""
+    return row[0] if row else None
+
+
 def _naive_utc(value: t.Any) -> t.Optional[datetime.datetime]:
     """A warehouse timestamp as naive UTC (SQLMesh treats naive timestamps as UTC)."""
     if value is None:
@@ -239,8 +244,9 @@ def _interval_filter(run: "ModelRun", adapter: "EngineAdapter") -> t.Optional[ex
     time_type = next((v for k, v in types.items() if k.lower() == run.time_column.lower()), None)
     if time_type is None:
         return None
+    dialect = run.model_dialect or ""  # SQLMesh's default dialect
     low, high = [
-        to_time_column(value, time_type, run.model_dialect, run.time_column_format)
+        to_time_column(value, time_type, dialect, run.time_column_format)
         for value in make_inclusive(run.interval_start, run.interval_end, run.model_dialect)
     ]
     return exp.column(run.time_column).between(low, high)
@@ -315,8 +321,10 @@ class _Measure:
 
     def volume(self) -> t.List[t.Dict[str, t.Any]]:
         try:
-            count = self.adapter.fetchone(self._interval_query(exp.func("COUNT", exp.Star())))[0]
-            return [self._row(ROW_COUNT, metric_value=float(count))]
+            count = _first(
+                self.adapter.fetchone(self._interval_query(exp.func("COUNT", exp.Star())))
+            )
+            return [self._row(ROW_COUNT, metric_value=float(count or 0))]
         except Exception as error:
             logger.debug("sqlmesh-observability: row count failed", exc_info=True)
             return [self._row(ROW_COUNT, error_message=str(error))]
@@ -328,7 +336,7 @@ class _Measure:
             return []  # the model has no such column: skip without error
         try:
             query = exp.select(exp.func("MAX", exp.column(column))).from_(self.table)
-            latest = _naive_utc(self.adapter.fetchone(query)[0])
+            latest = _naive_utc(_first(self.adapter.fetchone(query)))
             executed = _naive_utc(_ms_to_datetime(self.run.execution_time))
             value = (
                 None if latest is None or executed is None else (executed - latest).total_seconds()
@@ -373,6 +381,8 @@ class _Measure:
         except Exception as error:
             logger.debug("sqlmesh-observability: column metrics failed", exc_info=True)
             return rows + [self._row(m, c, error_message=str(error)) for m, c, _ in measured]
+        if result is None:
+            return rows + [self._row(m, c, error_message="no result") for m, c, _ in measured]
 
         total = int(result[0] or 0)
         for (metric, wanted, _), value in zip(measured, result[1:]):
