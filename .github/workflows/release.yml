@@ -16,6 +16,7 @@ env:
   # main commit as the docs site.
   SQLMESH_REF: 3df452cc9f47a435439cda087c3a419a1778b2b9
   SQLMESH__DISABLE_ANONYMIZED_ANALYTICS: "1"
+  REQUIRE_BROWSER_TESTS: "1"  # fail, don't skip, if Chromium is missing
 
 jobs:
   test:
@@ -34,6 +35,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "sqlmesh @ git+https://github.com/SQLMesh/sqlmesh@${SQLMESH_REF}"
           python -m pip install -e ".[dev]"
+          python -m playwright install --with-deps chromium  # tests/test_report_browser.py
 
       - name: Lint
         run: |

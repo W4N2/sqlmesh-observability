@@ -36,6 +36,9 @@ dev = [
     "ruff",
     "starlette>=0.27",
     "uvicorn>=0.22",
+    # Browser tests for the report renderer (tests/test_report_browser.py); 3.10+ only.
+    "playwright>=1.49; python_version >= '3.10'",
+    "pytest-playwright>=0.6; python_version >= '3.10'",
 ]
 
 [project.scripts]

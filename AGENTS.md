@@ -87,8 +87,9 @@ scripts/         ci.sh (every check), build_demo.py (the site's demo report)
   change breaks it, fix the package or the contract test deliberately, never silently.
 - Keep `tests/test_e2e.py` passing: the warehouse log, report, app, and alerts must agree on one
   history.
-- Report tests check the decoded payload and the HTML fallback. Drawing happens in the browser:
-  check it against `python scripts/build_demo.py --synthetic 1500 out.html`. Payload changes
+- Report tests check the decoded payload and the HTML fallback. What the browser draws is
+  tested by `tests/test_report_browser.py` (Playwright, headless Chromium); a change to
+  `web/report.js` needs a browser test, and the suite must pass with no console errors. Payload changes
   bump `SCHEMA_VERSION` in `payload.py` and `report.js` together, and the 1,500-model page must
   stay under the size budget in `tests/test_report_data.py`.
 
@@ -98,6 +99,7 @@ scripts/         ci.sh (every check), build_demo.py (the site's demo report)
 pip install -e ".[dev]"                 # development install
 scripts/ci.sh                           # every check a change must pass
 pytest tests/test_report.py -q          # one file
+python -m playwright install chromium   # once, for tests/test_report_browser.py
 python scripts/build_demo.py out.html   # build the demo report locally
 pip install -e ".[docs]" && mkdocs serve   # preview the docs site
 ```

@@ -26,8 +26,14 @@ The [DCO GitHub App](https://github.com/apps/dco) fails a pull request when any 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+python -m playwright install chromium   # for the report's browser tests
 scripts/ci.sh    # lint, format, types, Python 3.9 syntax, and tests
 ```
+
+`tests/test_report_browser.py` opens generated reports in headless Chromium and checks what the
+page draws: every view, filters from the URL, the model tree, long lists, expanding a row to its
+chart, the theme switch, and phone widths. Without Playwright's Chromium these tests skip; CI
+installs it and fails if they are skipped.
 
 To test against an unreleased SQLMesh, install a local checkout first
 (`pip install -e /path/to/sqlmesh -e ".[dev]"`); `scripts/test-against-sqlmesh-main.sh` runs the

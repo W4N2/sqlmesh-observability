@@ -510,6 +510,7 @@
         });
       } else items = list;
       collapse();
+      scroller.scrollTop = 0; // a new order or filter starts at its first row
       drawHead();
       layout();
       if (o.onCount) o.onCount(rows.length);
