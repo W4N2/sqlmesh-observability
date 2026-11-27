@@ -7,8 +7,14 @@ loads the generated ``config.py``; nothing secret is written to disk:
 
     SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_WAREHOUSE, SNOWFLAKE_DATABASE   required
     SNOWFLAKE_ROLE                                                               optional
-    SNOWFLAKE_PASSWORD, or SNOWFLAKE_PRIVATE_KEY (PEM text) / SNOWFLAKE_PRIVATE_KEY_PATH
-    with SNOWFLAKE_PRIVATE_KEY_PASSPHRASE when the key is encrypted
+    one of:
+      SNOWFLAKE_AUTHENTICATOR=externalbrowser   browser (SSO) login, no secret needed
+      SNOWFLAKE_PASSWORD
+      SNOWFLAKE_PRIVATE_KEY (PEM text) or SNOWFLAKE_PRIVATE_KEY_PATH, with
+      SNOWFLAKE_PRIVATE_KEY_PASSPHRASE when the key is encrypted
+
+With browser login, each new connection can open a login tab (the test opens a few). The connector
+caches the login in the macOS keychain when the account allows it (ALLOW_ID_TOKEN = TRUE).
 
 Use a scratch database. The test creates schemas with a random suffix (``OBS_<suffix>``,
 ``SQLMESH__OBS_<suffix>``, ``RAW_<suffix>``, ``OBSERVABILITY_<suffix>``) and drops them at the end.
@@ -59,6 +65,7 @@ settings = {
     "warehouse": os.environ["SNOWFLAKE_WAREHOUSE"],
     "database": os.environ["SNOWFLAKE_DATABASE"],
     "role": os.environ.get("SNOWFLAKE_ROLE"),
+    "authenticator": os.environ.get("SNOWFLAKE_AUTHENTICATOR"),
     "password": os.environ.get("SNOWFLAKE_PASSWORD"),
     "private_key": os.environ.get("SNOWFLAKE_PRIVATE_KEY"),
     "private_key_path": os.environ.get("SNOWFLAKE_PRIVATE_KEY_PATH"),
@@ -68,7 +75,10 @@ config = install(
     Config(
         gateways={
             "sf": GatewayConfig(
-                connection=SnowflakeConnectionConfig(**{k: v for k, v in settings.items() if v}),
+                connection=SnowflakeConnectionConfig(
+                    concurrent_tasks=1 if settings["authenticator"] else 4,
+                    **{k: v for k, v in settings.items() if v},
+                ),
                 state_connection=DuckDBConnectionConfig(database=__STATE__),
             )
         },

@@ -18,7 +18,8 @@ not in a SQLMesh release yet. The pre-releases below are tested against SQLMesh 
 - PyPI project links and classifiers, and a `py.typed` marker so type checkers use the package's
   annotations.
 - An end-to-end test on Snowflake (`tests/test_snowflake.py`), run weekly by the `snowflake`
-  workflow once `SNOWFLAKE_*` repository secrets are set.
+  workflow once `SNOWFLAKE_*` repository secrets are set. Locally it also accepts browser (SSO)
+  login with `SNOWFLAKE_AUTHENTICATOR=externalbrowser`.
 
 ### Fixed
 

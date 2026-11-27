@@ -48,9 +48,10 @@ unless the `SNOWFLAKE_*` variables listed in that file are set. Point it at a sc
 creates schemas with a random suffix and drops them afterwards. To run it locally:
 
 ```bash
-pip install "sqlmesh[snowflake]"
+pip install "snowflake-connector-python[secure-local-storage]"
 export SNOWFLAKE_ACCOUNT=... SNOWFLAKE_USER=... SNOWFLAKE_WAREHOUSE=... SNOWFLAKE_DATABASE=...
-export SNOWFLAKE_PASSWORD=...   # or SNOWFLAKE_PRIVATE_KEY_PATH=... for key-pair auth
+export SNOWFLAKE_AUTHENTICATOR=externalbrowser   # browser (SSO) login; or SNOWFLAKE_PASSWORD=...,
+                                                # or SNOWFLAKE_PRIVATE_KEY_PATH=... (key pair)
 pytest tests/test_snowflake.py -v
 ```
 
