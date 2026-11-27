@@ -15,9 +15,10 @@ from pathlib import Path
 
 from sqlglot import exp
 
+from sqlmesh_observability.logtables import LogTables
+
 if t.TYPE_CHECKING:
     from sqlmesh.core.config import Config
-    from sqlmesh.core.engine_adapter import EngineAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -445,7 +446,7 @@ def _hydrate_snapshots(
 
 
 def _fetch_model_runs(
-    adapter: "EngineAdapter",
+    adapter: LogTables,
     schema: str,
     active_versions: t.FrozenSet[t.Tuple[str, str]],
     latest_inv_id: t.Optional[str],
@@ -559,7 +560,7 @@ _RUN_LOG_LIMIT = 50
 
 
 def _fetch_invocations(
-    adapter: "EngineAdapter",
+    adapter: LogTables,
     schema: str,
     environment: str,
     in_scope_ids: t.Collection[str],
@@ -636,7 +637,7 @@ def _with_counts(
 
 
 def _latest_invocation_id(
-    adapter: "EngineAdapter",
+    adapter: LogTables,
     schema: str,
     environment: str,
 ) -> t.Optional[str]:
@@ -682,7 +683,7 @@ def _scope_condition(
 
 
 def _fetch_audit_rows(
-    adapter: "EngineAdapter",
+    adapter: LogTables,
     schema: str,
     scope: t.Optional[exp.Condition] = None,
 ) -> t.List[AuditRecord]:
@@ -748,7 +749,7 @@ def _fetch_audit_rows(
 
 
 def _fetch_samples(
-    adapter: "EngineAdapter",
+    adapter: LogTables,
     schema: str,
     invocation_ids: t.Sequence[str],
 ) -> t.Dict[t.Tuple[str, str, str, t.Optional[str]], t.Tuple[str, ...]]:
@@ -813,7 +814,7 @@ def _naive(value: t.Any) -> t.Optional[datetime.datetime]:
 
 
 def _fetch_metric_series(
-    adapter: "EngineAdapter",
+    adapter: LogTables,
     schema: str,
     active_versions: t.FrozenSet[t.Tuple[str, str]],
     latest_inv_id: t.Optional[str],
@@ -901,7 +902,7 @@ def _fetch_metric_series(
 
 
 def _fetch_schema_changes(
-    adapter: "EngineAdapter",
+    adapter: LogTables,
     schema: str,
     active_versions: t.FrozenSet[t.Tuple[str, str]],
     latest_inv_id: t.Optional[str],
@@ -1160,7 +1161,7 @@ def load_report_data_for(
         config, install_settings, gateway, schema
     )
 
-    adapter = config.get_connection(resolved_gateway).create_engine_adapter()
+    adapter = LogTables(config.get_connection(resolved_gateway).create_engine_adapter())
     try:
         if not adapter.table_exists(_table(resolved_schema, "audit_results")):
             raise MissingAuditTableError(resolved_schema)

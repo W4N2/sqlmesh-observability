@@ -200,11 +200,13 @@ def test_snowflake_end_to_end(tmp_path: Path) -> None:
             ("added_col", "added")
         ]
 
-        (failure,) = broken.failing_blocking_audits
-        assert failure.audit_name == "not_null" and failure.violation_count
-        assert len(failure.samples) == 2
-        for row in map(json.loads, failure.samples):  # Snowflake upper-cases unquoted names
-            assert row.get("ID", row.get("id")) is None
+        # One batch per day, several at once, so more than one may fail before the plan stops.
+        failures = broken.failing_blocking_audits
+        assert failures and {f.audit_name for f in failures} == {"not_null"}
+        for failure in failures:
+            assert failure.violation_count and len(failure.samples) == 2
+            for row in map(json.loads, failure.samples):  # Snowflake upper-cases unquoted names
+                assert row.get("ID", row.get("id")) is None
 
         edges = {
             (p.split(".")[-1].strip('"').lower(), n.model_name.split(".")[-1].strip('"').lower())
@@ -219,7 +221,8 @@ def test_snowflake_end_to_end(tmp_path: Path) -> None:
 
         assert run_monitor(path=root) == 0
     finally:
-        for schema in (obs, f"SQLMESH__{obs}", raw, log):
+        # SQLMesh quotes its physical schema with a lower-case prefix ("sqlmesh__OBS_...").
+        for schema in (obs, f'"sqlmesh__{obs}"', f"SQLMESH__{obs}", raw, log):
             try:
                 adapter.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
             except Exception:

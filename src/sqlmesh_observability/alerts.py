@@ -17,9 +17,9 @@ from pathlib import Path
 
 from sqlglot import exp
 
-if t.TYPE_CHECKING:
-    from sqlmesh.core.engine_adapter import EngineAdapter
+from sqlmesh_observability.logtables import LogTables
 
+if t.TYPE_CHECKING:
     from sqlmesh_observability.reader import AuditRecord, ReportData
 
 WATERMARK_TABLE = "alert_watermarks"
@@ -166,7 +166,7 @@ def _table(schema: str) -> exp.Table:
 
 
 def _invocation_marks(
-    adapter: "EngineAdapter", schema: str, invocation_ids: t.Collection[str]
+    adapter: LogTables, schema: str, invocation_ids: t.Collection[str]
 ) -> t.Dict[str, t.Tuple[t.Optional[str], Mark]]:
     """``{invocation_id: (environment, (finished_at or started_at, invocation_id))}``."""
     from sqlmesh_observability.reader import _IN_CHUNK, _naive
@@ -192,7 +192,7 @@ def _invocation_marks(
     return marks
 
 
-def read_watermark(adapter: "EngineAdapter", schema: str, environment: str) -> t.Optional[Mark]:
+def read_watermark(adapter: LogTables, schema: str, environment: str) -> t.Optional[Mark]:
     from sqlmesh_observability.reader import _naive
 
     table = _table(schema)
@@ -210,12 +210,12 @@ def read_watermark(adapter: "EngineAdapter", schema: str, environment: str) -> t
     return (_naive(row[0]) or datetime.datetime.min, str(row[1] or ""))
 
 
-def write_watermark(adapter: "EngineAdapter", schema: str, environment: str, mark: Mark) -> None:
+def write_watermark(adapter: LogTables, schema: str, environment: str, mark: Mark) -> None:
     """Replace the environment's watermark row. The read side's only write."""
     from sqlmesh_observability.writer import _literal
 
     table = _table(schema)
-    adapter.create_table(table, WATERMARK_COLUMNS, exists=True)
+    adapter.create_table(table, WATERMARK_COLUMNS)
     now = datetime.datetime.now(datetime.timezone.utc)
     row = {
         "environment": environment,
@@ -233,7 +233,7 @@ def write_watermark(adapter: "EngineAdapter", schema: str, environment: str, mar
         adapter.insert_append(
             table,
             exp.select(*(exp.column(c) for c in WATERMARK_COLUMNS)).from_(values),
-            target_columns_to_types=WATERMARK_COLUMNS,
+            WATERMARK_COLUMNS,
         )
 
 
@@ -259,7 +259,7 @@ def run_monitor(
         config, settings, gateway, schema
     )
 
-    adapter = config.get_connection(resolved_gateway).create_engine_adapter()
+    adapter = LogTables(config.get_connection(resolved_gateway).create_engine_adapter())
     try:
         found = candidates(data)
         marks = _invocation_marks(adapter, resolved_schema, {a.invocation_id for a in found})

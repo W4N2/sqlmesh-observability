@@ -241,15 +241,17 @@ def _interval_filter(run: "ModelRun", adapter: "EngineAdapter") -> t.Optional[ex
     if run.interval_start is None or run.interval_end is None:
         return None
     types = adapter.columns(run.physical_table)
-    time_type = next((v for k, v in types.items() if k.lower() == run.time_column.lower()), None)
-    if time_type is None:
+    # The table's own spelling, which a quoted query must use on case-sensitive engines.
+    found = next(((k, v) for k, v in types.items() if k.lower() == run.time_column.lower()), None)
+    if found is None:
         return None
+    time_name, time_type = found
     dialect = run.model_dialect or ""  # SQLMesh's default dialect
     low, high = [
         to_time_column(value, time_type, dialect, run.time_column_format)
         for value in make_inclusive(run.interval_start, run.interval_end, run.model_dialect)
     ]
-    return exp.column(run.time_column).between(low, high)
+    return exp.column(time_name).between(low, high)
 
 
 def _candidates(invocation: "Invocation") -> t.List["ModelRun"]:
@@ -309,6 +311,12 @@ class _Measure:
     def _row(self, metric: str, column: str = "", **values: t.Any) -> t.Dict[str, t.Any]:
         return {**self.base, "metric_name": metric, "column_name": column, **values}
 
+    def _fetchone(self, query: exp.Expr) -> t.Optional[t.Tuple[t.Any, ...]]:
+        # Quoted, as SQLMesh's own audits are: every name here is the warehouse's real one (the
+        # physical table SQLMesh created, columns as declared or described), and a lower-case
+        # one such as SQLMesh's "sqlmesh__<schema>" must not be upper-cased by Snowflake.
+        return self.adapter.fetchone(query, quote_identifiers=True)
+
     def _interval_query(self, *projections: exp.Expr) -> exp.Select:
         """``SELECT ... FROM table`` over the evaluated interval, or the whole table."""
         query = exp.select(*projections).from_(self.table)
@@ -321,9 +329,7 @@ class _Measure:
 
     def volume(self) -> t.List[t.Dict[str, t.Any]]:
         try:
-            count = _first(
-                self.adapter.fetchone(self._interval_query(exp.func("COUNT", exp.Star())))
-            )
+            count = _first(self._fetchone(self._interval_query(exp.func("COUNT", exp.Star()))))
             return [self._row(ROW_COUNT, metric_value=float(count or 0))]
         except Exception as error:
             logger.debug("sqlmesh-observability: row count failed", exc_info=True)
@@ -336,7 +342,7 @@ class _Measure:
             return []  # the model has no such column: skip without error
         try:
             query = exp.select(exp.func("MAX", exp.column(column))).from_(self.table)
-            latest = _naive_utc(_first(self.adapter.fetchone(query)))
+            latest = _naive_utc(_first(self._fetchone(query)))
             executed = _naive_utc(_ms_to_datetime(self.run.execution_time))
             value = (
                 None if latest is None or executed is None else (executed - latest).total_seconds()
@@ -377,7 +383,7 @@ class _Measure:
             else:
                 projections.append(exp.func("AVG", exp.cast(exp.column(real), double)))
         try:
-            result = self.adapter.fetchone(self._interval_query(*projections))
+            result = self._fetchone(self._interval_query(*projections))
         except Exception as error:
             logger.debug("sqlmesh-observability: column metrics failed", exc_info=True)
             return rows + [self._row(m, c, error_message=str(error)) for m, c, _ in measured]

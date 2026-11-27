@@ -19,6 +19,7 @@ import typing as t
 from sqlglot import exp
 
 from sqlmesh_observability import monitors
+from sqlmesh_observability.logtables import LogTables
 from sqlmesh_observability.monitors import MonitorSettings, RecordedSchema
 
 if t.TYPE_CHECKING:
@@ -236,12 +237,12 @@ class Writer:
     def _table(self, name: str) -> exp.Table:
         return exp.to_table(f"{self.schema}.{name}")
 
-    def ensure_tables(self, adapter: "EngineAdapter") -> None:
+    def ensure_tables(self, adapter: LogTables) -> None:
         if self._tables_ready:
             return
         adapter.create_schema(self.schema)
         for name, columns in TABLES.items():
-            adapter.create_table(self._table(name), columns, exists=True)
+            adapter.create_table(self._table(name), columns)
         version_table = self._table("schema_version")
         row = adapter.fetchone(exp.select("MAX(version)").from_(version_table))
         current = row[0] if row else None
@@ -257,37 +258,41 @@ class Writer:
         rows = self._rows(invocation)
         rows["audit_samples"] = self._samples(invocation)
         adapter = self._adapter()
-        self.ensure_tables(adapter)
+        log = LogTables(adapter)
+        self.ensure_tables(log)
         where = exp.column("invocation_id").eq(exp.Literal.string(invocation.invocation_id))
-        with adapter.transaction():
+        with log.transaction():
             for name in INVOCATION_TABLES:
-                adapter.delete_from(self._table(name), where)
+                log.delete_from(self._table(name), where)
             for name in INVOCATION_TABLES:
-                self._insert(adapter, name, rows[name])
+                self._insert(log, name, rows[name])
         # Base rows are committed above; monitors run after, so a slow or failing metric query
         # can lose only metrics.
         if self.monitors.enabled:
-            self._write_monitors(invocation, adapter)
+            self._write_monitors(invocation, adapter, log)
 
     # --- Passive monitors -----------------------------------------------------------------------
 
-    def _write_monitors(self, invocation: "Invocation", adapter: "EngineAdapter") -> None:
+    def _write_monitors(
+        self, invocation: "Invocation", adapter: "EngineAdapter", log: LogTables
+    ) -> None:
+        """Metrics query model tables through ``adapter``; results go to ``log``."""
         settings = self.monitors
         if settings.collects_metrics:
             try:
                 rows = monitors.collect_metrics(
                     invocation, self._sample_adapter(), adapter, settings
                 )
-                self._replace_metrics(adapter, rows)
+                self._replace_metrics(log, rows)
             except Exception:
                 logger.debug("sqlmesh-observability: passive metrics failed", exc_info=True)
         if settings.schema and invocation.schemas:
             try:
-                self._write_schemas(invocation, adapter)
+                self._write_schemas(invocation, log)
             except Exception:
                 logger.debug("sqlmesh-observability: schema capture failed", exc_info=True)
 
-    def _replace_metrics(self, adapter: "EngineAdapter", rows: t.List[t.Dict[str, t.Any]]) -> None:
+    def _replace_metrics(self, adapter: LogTables, rows: t.List[t.Dict[str, t.Any]]) -> None:
         """Latest wins per (model, version, interval_start, metric, column)."""
         if not rows:
             return
@@ -317,7 +322,7 @@ class Writer:
             self._insert(adapter, "metrics", rows)
 
     def _recorded_schemas(
-        self, adapter: "EngineAdapter", model_names: t.Iterable[str]
+        self, adapter: LogTables, model_names: t.Iterable[str]
     ) -> t.Dict[str, t.Dict[str, RecordedSchema]]:
         names = sorted(set(model_names))
         query = (
@@ -353,7 +358,7 @@ class Writer:
             )
         return recorded
 
-    def _write_schemas(self, invocation: "Invocation", adapter: "EngineAdapter") -> None:
+    def _write_schemas(self, invocation: "Invocation", adapter: LogTables) -> None:
         recorded = self._recorded_schemas(adapter, (s.model_name for s in invocation.schemas))
         # A replay of a capture already recorded is compared with its ancestors, not itself.
         for capture in invocation.schemas:
@@ -374,9 +379,7 @@ class Writer:
             self._insert(adapter, "schema_columns", column_rows)
             self._insert(adapter, "schema_changes", change_rows)
 
-    def _insert(
-        self, adapter: "EngineAdapter", name: str, rows: t.List[t.Dict[str, t.Any]]
-    ) -> None:
+    def _insert(self, adapter: LogTables, name: str, rows: t.List[t.Dict[str, t.Any]]) -> None:
         columns = TABLES[name]
         for start in range(0, len(rows), _INSERT_CHUNK):
             chunk = rows[start : start + _INSERT_CHUNK]
@@ -389,7 +392,7 @@ class Writer:
                 columns=list(columns),
             )
             query = exp.select(*(exp.column(c) for c in columns)).from_(values)
-            adapter.insert_append(self._table(name), query, target_columns_to_types=columns)
+            adapter.insert_append(self._table(name), query, columns)
 
     def _rows(self, invocation: "Invocation") -> t.Dict[str, t.List[t.Dict[str, t.Any]]]:
         return {

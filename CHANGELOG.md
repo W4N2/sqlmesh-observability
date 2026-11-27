@@ -23,6 +23,11 @@ not in a SQLMesh release yet. The pre-releases below are tested against SQLMesh 
 
 ### Fixed
 
+- **Snowflake:** nothing was logged. The package created its tables with quoted lower-case names
+  that its own reads, unquoted, could not find. Table and column names are now in the
+  warehouse's case (upper case on Snowflake), so `OBSERVABILITY.INVOCATIONS` works unquoted.
+- **Snowflake:** passive volume, freshness, and column metrics failed, because their queries
+  dropped the quotes around SQLMesh's lower-case `sqlmesh__<schema>` physical schemas.
 - Without Playwright installed (Python 3.9), the browser tests failed to collect instead of
   skipping.
 
