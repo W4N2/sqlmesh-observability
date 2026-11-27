@@ -125,3 +125,32 @@ def test_external_model_without_rows_is_a_lineage_only_node(project: Path, probe
     assert lineage["impact"][raw] == 3
     names = [_key(m["n"]) for m in payload["models"]]
     assert lineage["impact"][names.index("obs.orders")] == 2
+
+
+@pytest.mark.usefixtures("collector")
+def test_standalone_audit_is_logged_under_its_own_name(project: Path, probe: Probe) -> None:
+    """A standalone audit isn't a model: SQLMesh's ``Snapshot.model`` raises for it."""
+    from sqlmesh_observability.reader import load_report_data
+
+    _install_on_load(probe)
+    (project / "models" / "events.sql").unlink()
+    (project / "audits").mkdir(exist_ok=True)
+    (project / "audits" / "orders_positive.sql").write_text(
+        "AUDIT (name assert_orders_positive, standalone true);\n"
+        "SELECT * FROM obs.orders WHERE id < 0"
+    )
+    context = _chain(project)
+    _plan(context)
+    context.close()
+
+    data = load_report_data(project)
+    names = [_key(m.model_name) for m in data.models]
+    assert "None" not in names and "" not in names
+    (audit_model,) = [m for m in data.models if m.model_name.endswith("assert_orders_positive")]
+    assert [(a.audit_name, a.status) for a in audit_model.audits] == [
+        ("assert_orders_positive", "pass")
+    ]
+    assert audit_model.audits[0].snapshot_id
+    node = next(n for n in data.lineage if n.model_name.endswith("assert_orders_positive"))
+    assert node.kind == "AUDIT"
+    assert [_key(p) for p in node.parents] == ["obs.orders"]

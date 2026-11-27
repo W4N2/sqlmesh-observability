@@ -274,7 +274,7 @@ class Collector:
             environment=invocation.environment if invocation else None,
             started_at=_now(),
         )
-        self._copy_model_metadata(record, getattr(snapshot, "model", None))
+        self._copy_model_metadata(record, _model_of(snapshot))
         token = _current_model.set(record)
         with self._lock:
             self._open_models[id(facts)] = _OpenModel(record=record, token=token)
@@ -310,7 +310,7 @@ class Collector:
 
     def _capture_schema(self, invocation_id: str, action: str, snapshot: t.Any) -> None:
         invocation = self._invocation(invocation_id)
-        model = getattr(snapshot, "model", None)
+        model = _model_of(snapshot)
         if invocation is None or model is None:
             return
         try:
@@ -417,6 +417,18 @@ class Collector:
                 invocation.command = "plan"
             if invocation.plan_id is None and facts.get("native_plan_id") is not None:
                 invocation.plan_id = str(facts["native_plan_id"])
+
+
+def _model_of(snapshot: t.Any) -> t.Any:
+    """The snapshot's model, or None for a standalone audit or anything else that isn't a model.
+
+    ``Snapshot.model`` raises ``SQLMeshError`` (not ``AttributeError``) for non-model snapshots,
+    so ``getattr(snapshot, "model", None)`` would raise; ``model_or_none`` doesn't.
+    """
+    try:
+        return getattr(snapshot, "model_or_none", None)
+    except Exception:
+        return None
 
 
 def _audit_status(record: AuditRun) -> str:

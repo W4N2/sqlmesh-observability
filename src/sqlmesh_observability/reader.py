@@ -373,7 +373,12 @@ def _lineage_entry(snapshot: t.Any) -> t.Tuple[t.Optional[str], t.Tuple[str, ...
     """(kind name, parent model names) of a ``Snapshot`` or ``SnapshotTableInfo``."""
     kind = getattr(snapshot, "model_kind_name", None)
     parents = tuple(sorted({parent.name for parent in getattr(snapshot, "parents", ())}))
-    return (None if kind is None else str(getattr(kind, "value", kind)), parents)
+    if kind is None:
+        node_type = getattr(snapshot, "node_type", None)
+        if str(getattr(node_type, "value", node_type)).lower() == "audit":
+            return "AUDIT", parents  # a standalone audit
+        return None, parents
+    return str(getattr(kind, "value", kind)), parents
 
 
 def _node_metadata(snapshot: t.Any) -> t.Tuple[t.Optional[str], t.Tuple[t.Tuple[str, str], ...]]:

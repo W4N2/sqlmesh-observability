@@ -103,13 +103,13 @@
   var models = D.models.map(function (m, i) {
     var s = m.n.replace(/"/g, "");
     var parts = s.split(".");
-    catalogs[parts.length === 3 ? parts[0] : ""] = 1;
+    if (parts.length === 3) catalogs[parts[0]] = 1; // only three-part names have a catalog
     return {
       i: i, name: m.n, short: s, parts: parts, owner: m.o >= 0 ? D.owners[m.o] : null,
       st: m.st, raw: m
     };
   });
-  var dropCatalog = Object.keys(catalogs).length === 1 && !catalogs[""];
+  var dropCatalog = Object.keys(catalogs).length === 1;
   models.forEach(function (m) {
     var p = dropCatalog ? m.parts.slice(1) : m.parts;
     m.display = p.join(".");
@@ -1379,6 +1379,7 @@
     if (!kind) return "";
     if (/^INCREMENTAL/.test(kind)) return "incremental";
     if (/^SCD_TYPE_2/.test(kind)) return "SCD type 2";
+    if (kind === "AUDIT") return "standalone audit";
     return kind.toLowerCase().replace(/_/g, " ");
   }
 
@@ -1438,8 +1439,8 @@
           '" href="' + esc(href) + '" aria-label="' + esc(label) + '"><title>' + esc([n.display + (n.kind ? " (" + n.kind + ")" : "")].concat(cardLines(n).slice(1).map(function (l) { return l[1]; })).join("\n")) + "</title>" +
           '<rect x="' + x + '" y="' + y + '" width="' + CARD_W + '" height="' + CARD_H + '" rx="7"/>' +
           '<circle class="dot ' + st + '" cx="' + (x + 14) + '" cy="' + (y + 18) + '" r="4.5"/>' +
-          '<text class="name" x="' + (x + 26) + '" y="' + (y + 22) + '">' + esc(clip(n.leaf, 24)) + "</text>" +
-          (n.impact ? '<text class="impact" x="' + (x + CARD_W - 12) + '" y="' + (y + 22) + '" text-anchor="end">' + esc(compact(n.impact)) + " downstream</text>" : "") +
+          '<text class="name" x="' + (x + 26) + '" y="' + (y + 22) + '">' + esc(clip(n.leaf, nameRoom(n))) + "</text>" +
+          (n.impact ? '<text class="impact" x="' + (x + CARD_W - 12) + '" y="' + (y + 22) + '" text-anchor="end">' + esc(impactLabel(n)) + "</text>" : "") +
           cardLines(n).map(function (line, k) {
             var ly = y + 42 + k * 17, more = line[2] || "";
             return '<text class="line ' + line[0] + '" x="' + (x + 26) + '" y="' + ly + '">' + esc(clip(line[1], more ? 32 : 40)) + "</text>" +
@@ -1456,6 +1457,12 @@
     var W = g.width + 2 * pad, H = g.height + 2 * pad;
     return '<svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' +
       esc("Lineage of " + focus.display) + '">' + svgEdges + svgNodes + "</svg>";
+  }
+  function impactLabel(n) { return compact(n.impact) + " downstream"; }
+  function nameRoom(n) {
+    // Characters of the 12.5px monospace name that fit beside the downstream label.
+    var free = CARD_W - 26 - 12 - (n.impact ? impactLabel(n).length * 6.2 + 10 : 0);
+    return Math.max(12, Math.floor(free / 7.6));
   }
   function clip(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
 
