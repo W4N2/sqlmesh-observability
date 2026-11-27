@@ -56,6 +56,8 @@ dev = [
     # Browser tests for the report renderer (tests/test_report_browser.py); 3.10+ only.
     "playwright>=1.49; python_version >= '3.10'",
     "pytest-playwright>=0.6; python_version >= '3.10'",
+    # Snowflake's adapter over a mocked connection (tests/test_identifier_case.py).
+    "snowflake-connector-python",
 ]
 
 [project.urls]

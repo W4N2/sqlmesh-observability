@@ -50,12 +50,14 @@ creates schemas with a random suffix and drops them afterwards. To run it locall
 ```bash
 pip install "snowflake-connector-python[secure-local-storage]"
 export SNOWFLAKE_ACCOUNT=... SNOWFLAKE_USER=... SNOWFLAKE_WAREHOUSE=... SNOWFLAKE_DATABASE=...
-export SNOWFLAKE_AUTHENTICATOR=externalbrowser   # browser (SSO) login; or SNOWFLAKE_PASSWORD=...,
-                                                # or SNOWFLAKE_PRIVATE_KEY_PATH=... (key pair)
+export SNOWFLAKE_ROLE=...                                # optional
+export SNOWFLAKE_PRIVATE_KEY_PATH=~/.snowflake/key.p8   # key pair; or SNOWFLAKE_PASSWORD=...,
+                                                        # or SNOWFLAKE_AUTHENTICATOR=externalbrowser
 pytest tests/test_snowflake.py -v
 ```
 
-The `snowflake` workflow runs it weekly and on demand from the same names as repository secrets.
+Browser login works only on accounts with single sign-on set up. It runs by hand only; CI does
+not run it. Run it after changes to SQL the package sends to the warehouse.
 
 ## Releasing
 

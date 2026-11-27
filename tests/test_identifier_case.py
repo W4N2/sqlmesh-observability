@@ -15,7 +15,7 @@ from unittest import mock
 
 import pytest
 
-pytest.importorskip("snowflake.connector")
+pytest.importorskip("snowflake.connector")  # in the dev extra; CI runs these
 
 import sqlglot  # noqa: E402
 from sqlglot import exp  # noqa: E402

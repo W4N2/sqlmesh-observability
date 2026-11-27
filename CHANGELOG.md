@@ -10,6 +10,8 @@ not in a SQLMesh release yet. The pre-releases below are tested against SQLMesh 
 
 ## [Unreleased]
 
+## [0.1.0a5] - 2026-11-28
+
 ### Added
 
 - CI runs the test suite on Python 3.9 to 3.13.
@@ -17,9 +19,8 @@ not in a SQLMesh release yet. The pre-releases below are tested against SQLMesh 
   the execution-observation API.
 - PyPI project links and classifiers, and a `py.typed` marker so type checkers use the package's
   annotations.
-- An end-to-end test on Snowflake (`tests/test_snowflake.py`), run weekly by the `snowflake`
-  workflow once `SNOWFLAKE_*` repository secrets are set. Locally it also accepts browser (SSO)
-  login with `SNOWFLAKE_AUTHENTICATOR=externalbrowser`.
+- An end-to-end test on a real Snowflake account (`tests/test_snowflake.py`), run by hand. It is
+  skipped unless `SNOWFLAKE_*` variables are set.
 
 ### Fixed
 
@@ -83,7 +84,8 @@ First release on PyPI.
 - `sqlmesh-observe monitor`: one grouped message per owner for new failures and anomalies.
 - A tag-triggered release workflow with PyPI trusted publishing.
 
-[Unreleased]: https://github.com/W4N2/sqlmesh-observability/compare/v0.1.0a4...HEAD
+[Unreleased]: https://github.com/W4N2/sqlmesh-observability/compare/v0.1.0a5...HEAD
+[0.1.0a5]: https://github.com/W4N2/sqlmesh-observability/compare/v0.1.0a4...v0.1.0a5
 [0.1.0a4]: https://github.com/W4N2/sqlmesh-observability/compare/v0.1.0a3...v0.1.0a4
 [0.1.0a3]: https://github.com/W4N2/sqlmesh-observability/compare/v0.1.0a2...v0.1.0a3
 [0.1.0a2]: https://github.com/W4N2/sqlmesh-observability/releases/tag/v0.1.0a2
