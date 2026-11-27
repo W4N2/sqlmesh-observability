@@ -41,6 +41,21 @@ suite against SQLMesh `main`.
 
 See [AGENTS.md](AGENTS.md) for the project's design rules.
 
+### Snowflake
+
+`tests/test_snowflake.py` runs one short history on a real Snowflake account and is skipped
+unless the `SNOWFLAKE_*` variables listed in that file are set. Point it at a scratch database: it
+creates schemas with a random suffix and drops them afterwards. To run it locally:
+
+```bash
+pip install "sqlmesh[snowflake]"
+export SNOWFLAKE_ACCOUNT=... SNOWFLAKE_USER=... SNOWFLAKE_WAREHOUSE=... SNOWFLAKE_DATABASE=...
+export SNOWFLAKE_PASSWORD=...   # or SNOWFLAKE_PRIVATE_KEY_PATH=... for key-pair auth
+pytest tests/test_snowflake.py -v
+```
+
+The `snowflake` workflow runs it weekly and on demand from the same names as repository secrets.
+
 ## Releasing
 
 Releases are published to PyPI by `.github/workflows/release.yml` when a version tag is pushed.

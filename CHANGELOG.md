@@ -17,6 +17,8 @@ not in a SQLMesh release yet. The pre-releases below are tested against SQLMesh 
   the execution-observation API.
 - PyPI project links and classifiers, and a `py.typed` marker so type checkers use the package's
   annotations.
+- An end-to-end test on Snowflake (`tests/test_snowflake.py`), run weekly by the `snowflake`
+  workflow once `SNOWFLAKE_*` repository secrets are set.
 
 ### Fixed
 

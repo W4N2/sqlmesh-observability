@@ -96,3 +96,4 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["snowflake: runs against a real Snowflake account (needs SNOWFLAKE_* variables)"]
