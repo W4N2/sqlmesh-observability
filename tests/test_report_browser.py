@@ -34,7 +34,7 @@ if importlib.util.find_spec("playwright") is None:
 
 from playwright.sync_api import Browser, Page, expect  # noqa: E402
 
-VIEWS = ("overview", "models", "tests", "incidents", "runs", "schema")
+VIEWS = ("overview", "models", "lineage", "tests", "incidents", "runs", "schema")
 
 
 @pytest.fixture(scope="session")
@@ -76,7 +76,7 @@ def reports(tmp_path_factory: pytest.TempPathFactory) -> t.Dict[str, str]:
 
     future = root / "future.html"
     future.write_text(
-        demo.read_text(encoding="utf-8").replace('"schema_version":1,', '"schema_version":99,', 1),
+        demo.read_text(encoding="utf-8").replace('"schema_version":2,', '"schema_version":99,', 1),
         encoding="utf-8",
     )
     return {
@@ -182,10 +182,114 @@ def test_theme_choice_survives_a_reload(page: "Page", reports: t.Dict[str, str])
     expect(page.locator("html")).to_have_attribute("data-theme", "dark")
 
 
-@pytest.mark.parametrize("route", [*VIEWS, "model?name=demo.mart_00.model_0020"])
+@pytest.mark.parametrize(
+    "route",
+    [*VIEWS, "model?name=demo.mart_00.model_0020", "lineage", "lineage?view=impact"],
+)
 def test_views_fit_a_phone(page: "Page", reports: t.Dict[str, str], route: str) -> None:
     page.set_viewport_size({"width": 360, "height": 800})
     _open(page, reports["scale"], route)
     expect(page.locator(".page .panel").first).to_be_visible()
     width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
     assert width[0] <= width[1], f"{route}: page is {width[0]}px wide in a {width[1]}px viewport"
+
+
+def _lineage(page: "Page", reports: t.Dict[str, str], **params: str) -> None:
+    query = "&".join(f"{k}={v}" for k, v in params.items())
+    _open(page, reports["scale"], "lineage" + (f"?{query}" if query else ""))
+    expect(page.locator(".lineage svg")).to_be_visible()
+
+
+def _nodes(page: "Page") -> t.List[str]:
+    return page.locator(".lineage .node.model").evaluate_all(
+        "nodes => nodes.map(n => n.dataset.name)"
+    )
+
+
+def test_lineage_focuses_one_model_with_depth_and_direction(
+    page: "Page", reports: t.Dict[str, str]
+) -> None:
+    _lineage(page, reports, model="demo.mart_00.model_0000")
+    assert len(_nodes(page)) <= 150
+    focus = page.locator(".lineage .node.focus")
+    expect(focus).to_have_count(1)
+    assert focus.get_attribute("data-name") == "demo.mart_00.model_0000"
+    names = _nodes(page)
+    assert "demo.raw.source_00" in names  # its external parent
+    assert "demo.mart_03.model_0300" in names  # its child
+
+    _lineage(page, reports, model="demo.mart_00.model_0000", depth="1", dir="down")
+    assert sorted(_nodes(page)) == ["demo.mart_00.model_0000", "demo.mart_03.model_0300"]
+
+    page.locator('.lineage .node[data-name="demo.mart_03.model_0300"]').click()
+    expect(page.locator(".lineage .node.focus")).to_have_attribute(
+        "data-name", "demo.mart_03.model_0300"
+    )
+    assert "model=demo.mart_03.model_0300" in page.url.replace("%2E", ".")
+
+
+def test_lineage_opens_on_the_widest_impact_issue(page: "Page", reports: t.Dict[str, str]) -> None:
+    _lineage(page, reports)
+    widest = page.evaluate(
+        "(() => { const d = window.__report.data;"
+        " const top = d.issues.slice().sort((a, b) => b.impact - a.impact)[0];"
+        " return d.models[top.model].n; })()"
+    )
+    expect(page.locator(".lineage .node.focus")).to_have_attribute("data-name", widest)
+
+
+def test_lineage_bounds_a_wide_fan_out(page: "Page", reports: t.Dict[str, str]) -> None:
+    _lineage(page, reports, model="demo.mart_03.model_0300", depth="1", dir="down")
+    assert len(_nodes(page)) <= 1 + 20  # the focus and at most 20 children
+    more = page.locator(".lineage .node.more")
+    expect(more).to_have_count(1)
+    hidden = int(more.get_attribute("data-count") or 0)
+    assert len(_nodes(page)) - 1 + hidden == 400  # every child is drawn or counted
+    more.click()
+    expect(page.locator(".lineage-more li")).to_have_count(hidden)
+
+
+def test_lineage_issues_only_collapses_healthy_steps(
+    page: "Page", reports: t.Dict[str, str]
+) -> None:
+    _lineage(page, reports, model="demo.mart_10.model_1000", depth="all", dir="up", issues="1")
+    names = _nodes(page)
+    assert "demo.mart_00.model_0000" in names  # failing, two levels up
+    assert "demo.mart_03.model_0300" not in names  # healthy, between them
+    step = page.locator(".lineage .node.step")
+    expect(step.first).to_be_visible()
+    assert "healthy" in (step.first.text_content() or "")
+    assert "demo.raw.source_00" not in names  # healthy, not between the focus and an issue
+
+
+def test_impact_view_lists_issues_by_downstream_reach(
+    page: "Page", reports: t.Dict[str, str]
+) -> None:
+    _open(page, reports["scale"], "lineage?view=impact")
+    rows = page.locator(".list-row")
+    expect(rows.first).to_be_visible()
+    reach = [
+        int(r.replace(",", ""))
+        for r in rows.evaluate_all("rs => rs.map(r => r.children[3].textContent)")
+    ]
+    assert reach == sorted(reach, reverse=True) and reach[0] > 0
+    rows.first.click()
+    detail = page.locator(".list-detail")
+    expect(detail.locator(".impact-list li").first).to_be_visible()
+    assert detail.locator(".impact-list li").count() == min(200, reach[0])
+
+
+def test_model_page_and_lists_show_lineage(page: "Page", reports: t.Dict[str, str]) -> None:
+    _open(page, reports["scale"], "model?name=demo.mart_00.model_0000")
+    panel = page.locator(".lineage-panel")
+    expect(panel).to_contain_text("source_00")
+    expect(panel).to_contain_text("model_0300")
+    expect(panel.get_by_role("link", name="Open lineage")).to_have_attribute(
+        "href", re.compile("lineage\\?model=demo")
+    )
+    expect(page.locator(".facts")).to_contain_text("Downstream")
+
+    page.evaluate("location.hash = 'overview'")
+    expect(page.locator(".list-head")).to_contain_text("Downstream")
+    page.evaluate("location.hash = 'models'")
+    expect(page.locator(".list-head")).to_contain_text("Downstream")

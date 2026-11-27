@@ -67,6 +67,20 @@ def _fallback(payload: t.Mapping[str, t.Any]) -> str:
     else:
         status = "Healthy"
 
+    lineage = payload["lineage"]
+    names = [m["n"] for m in models] + lineage["extra"]
+    children: t.Dict[int, t.List[int]] = {}
+    for child, parents in enumerate(lineage["parents"]):
+        for parent in parents:
+            children.setdefault(parent, []).append(child)
+
+    def downstream(model: int) -> str:
+        direct = sorted(names[c].replace('"', "") for c in children.get(model, []))
+        if not direct:
+            return "-"
+        shown = ", ".join(direct[:10])
+        return shown + (f", and {len(direct) - 10:,} more" if len(direct) > 10 else "")
+
     def row(issue: t.Mapping[str, t.Any]) -> str:
         model = models[issue["model"]]["n"].replace('"', "") if issue["model"] >= 0 else "-"
         if issue["kind"] == "anomaly":
@@ -81,15 +95,16 @@ def _fallback(payload: t.Mapping[str, t.Any]) -> str:
         return (
             f"<tr><td><code>{_esc(model)}</code></td><td><code>{_esc(signal)}</code></td>"
             f"<td>{_esc(issue['interval'] or '-')}</td><td>{_esc(value)}</td>"
-            f"<td>{_esc(issue['kind'])}</td></tr>"
+            f"<td>{_esc(issue['kind'])}</td>"
+            f"<td>{_esc(downstream(issue['model']) if issue['model'] >= 0 else '-')}</td></tr>"
         )
 
     groups = []
     for group_id, title, kinds, empty in _GROUPS:
         rows = [row(i) for i in payload["issues"] if i["kind"] in kinds]
-        body = "".join(rows) or f'<tr><td colspan="5" class="note">{_esc(empty)}</td></tr>'
+        body = "".join(rows) or f'<tr><td colspan="6" class="note">{_esc(empty)}</td></tr>'
         groups.append(
-            f'<tbody id="{group_id}"><tr class="group-head"><td colspan="5">{_esc(title)} · '
+            f'<tbody id="{group_id}"><tr class="group-head"><td colspan="6">{_esc(title)} · '
             f"{len(rows)}</td></tr>{body}</tbody>"
         )
 
@@ -113,7 +128,7 @@ def _fallback(payload: t.Mapping[str, t.Any]) -> str:
         f"<li><strong>{len(payload['issues']):,}</strong>open issues</li>"
         f"<li><strong>{len(models):,}</strong>models</li></ul>"
         "<table><thead><tr><th>Model</th><th>Signal</th><th>Interval</th><th>Value</th>"
-        f"<th>Severity</th></tr></thead>{''.join(groups)}</table>"
+        f"<th>Severity</th><th>Downstream</th></tr></thead>{''.join(groups)}</table>"
         '<p class="note">Turn on JavaScript to see model pages, test results, runs, and charts.'
         "</p></section></div>"
     )

@@ -10,7 +10,7 @@ from __future__ import annotations
 import datetime
 import logging
 import typing as t
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from sqlglot import exp
@@ -148,6 +148,15 @@ class SchemaChange:
 
 
 @dataclass(frozen=True)
+class LineageNode:
+    """One model in the environment's DAG, from SQLMesh state."""
+
+    model_name: str
+    kind: t.Optional[str]  # SQLMesh model kind name, e.g. ``EXTERNAL`` or ``FULL``
+    parents: t.Tuple[str, ...]  # model names
+
+
+@dataclass(frozen=True)
 class ModelReport:
     """Scoped audit history and state metadata for one model."""
 
@@ -186,6 +195,8 @@ class ReportData:
     invocations: t.Tuple["InvocationRecord", ...] = ()  # newest first
     # Passive monitors configured in install(): any of volume, freshness, schema, columns.
     monitors: t.Tuple[str, ...] = ()
+    # Every model in the environment with its parents, sorted by name. Empty without state.
+    lineage: t.Tuple[LineageNode, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -194,6 +205,8 @@ class _StateSnapshotInfo:
     owners: t.Dict[str, t.Optional[str]]
     columns: t.Dict[str, t.Tuple[t.Tuple[str, str], ...]]
     gateway: t.Optional[str] = None
+    # model name -> (kind, parent model names)
+    lineage: t.Dict[str, t.Tuple[t.Optional[str], t.Tuple[str, ...]]] = field(default_factory=dict)
 
 
 def _fmt_ts(value: t.Any) -> t.Optional[str]:
@@ -327,7 +340,11 @@ def _read_state_from_gateway(
             if cols:
                 columns[snapshot.name] = cols
         return _StateSnapshotInfo(
-            active_versions=active_versions, owners=owners, columns=columns, gateway=gateway
+            active_versions=active_versions,
+            owners=owners,
+            columns=columns,
+            gateway=gateway,
+            lineage={snap.name: _lineage_entry(snap) for snap in env.snapshots},
         )
     except Exception:
         logger.debug(
@@ -352,6 +369,13 @@ def _prepare_for_fork() -> None:
     import pandas  # noqa: F401
 
 
+def _lineage_entry(snapshot: t.Any) -> t.Tuple[t.Optional[str], t.Tuple[str, ...]]:
+    """(kind name, parent model names) of a ``Snapshot`` or ``SnapshotTableInfo``."""
+    kind = getattr(snapshot, "model_kind_name", None)
+    parents = tuple(sorted({parent.name for parent in getattr(snapshot, "parents", ())}))
+    return (None if kind is None else str(getattr(kind, "value", kind)), parents)
+
+
 def _node_metadata(snapshot: t.Any) -> t.Tuple[t.Optional[str], t.Tuple[t.Tuple[str, str], ...]]:
     node = snapshot.node
     owner = getattr(node, "owner", None)
@@ -365,8 +389,13 @@ def _node_metadata(snapshot: t.Any) -> t.Tuple[t.Optional[str], t.Tuple[t.Tuple[
 
 def _hydrate_snapshots(
     config: "Config", gateway: str, wanted: t.Mapping[str, str]
-) -> t.Tuple[t.Dict[str, t.Optional[str]], t.Dict[str, t.Tuple[t.Tuple[str, str], ...]]]:
-    """Owner and columns for snapshots outside the environment, by ``{model_name: snapshot_id}``.
+) -> t.Tuple[
+    t.Dict[str, t.Optional[str]],
+    t.Dict[str, t.Tuple[t.Tuple[str, str], ...]],
+    t.Dict[str, t.Tuple[t.Optional[str], t.Tuple[str, ...]]],
+]:
+    """Owner, columns, and lineage for snapshots outside the environment, by
+    ``{model_name: snapshot_id}``.
 
     Read-only, through the state reader, with the same gateway order as the environment read.
     A plan that stops before promotion has already stored its snapshots in state.
@@ -376,8 +405,9 @@ def _hydrate_snapshots(
 
     owners: t.Dict[str, t.Optional[str]] = {}
     columns: t.Dict[str, t.Tuple[t.Tuple[str, str], ...]] = {}
+    lineage: t.Dict[str, t.Tuple[t.Optional[str], t.Tuple[str, ...]]] = {}
     if not wanted:
-        return owners, columns
+        return owners, columns, lineage
     _prepare_for_fork()
     ids = [SnapshotId(name=name, identifier=identifier) for name, identifier in wanted.items()]
     candidates: t.List[str] = []
@@ -403,9 +433,10 @@ def _hydrate_snapshots(
             owners[snapshot.name] = owner
             if cols:
                 columns[snapshot.name] = cols
+            lineage[snapshot.name] = _lineage_entry(snapshot)
         if snapshots:
             break
-    return owners, columns
+    return owners, columns, lineage
 
 
 def _fetch_model_runs(
@@ -976,6 +1007,7 @@ def _build_report_data(
     extra_columns: t.Optional[t.Mapping[str, t.Tuple[t.Tuple[str, str], ...]]] = None,
     invocations: t.Sequence[InvocationRecord] = (),
     monitors: t.Tuple[str, ...] = (),
+    lineage: t.Tuple[LineageNode, ...] = (),
 ) -> ReportData:
     by_model: t.Dict[str, t.List[AuditRecord]] = {}
     for record in records:
@@ -1071,6 +1103,21 @@ def _build_report_data(
         anomalies=tuple(anomalies),
         invocations=_with_counts(invocations, runs, records),
         monitors=monitors,
+        lineage=lineage,
+    )
+
+
+def _lineage_nodes(
+    entries: t.Mapping[str, t.Tuple[t.Optional[str], t.Tuple[str, ...]]],
+) -> t.Tuple[LineageNode, ...]:
+    """Lineage nodes sorted by name. Parents outside the environment are dropped."""
+    return tuple(
+        LineageNode(
+            model_name=name,
+            kind=kind,
+            parents=tuple(p for p in parents if p in entries and p != name),
+        )
+        for name, (kind, parents) in sorted(entries.items())
     )
 
 
@@ -1179,7 +1226,9 @@ def load_report_data_for(
         if record.snapshot_id and record.model_name not in wanted:
             wanted[record.model_name] = record.snapshot_id
     wanted = {name: sid for name, sid in wanted.items() if name not in known}
-    extra_owners, extra_columns = _hydrate_snapshots(config, resolved_gateway, wanted)
+    extra_owners, extra_columns, extra_lineage = _hydrate_snapshots(
+        config, resolved_gateway, wanted
+    )
 
     return _build_report_data(
         hydrated,
@@ -1194,4 +1243,5 @@ def load_report_data_for(
         extra_columns=extra_columns,
         invocations=invocations,
         monitors=_configured_monitors(monitor_settings),
+        lineage=_lineage_nodes({**(state_info.lineage if state_info else {}), **extra_lineage}),
     )

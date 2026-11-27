@@ -42,8 +42,9 @@ warnings, green for passing. Every colored mark also has a text label.
 | View | Shows |
 | --- | --- |
 | Dashboard | The environment's status, three summaries (audit results, model health, monitored models), one count per signal split into pass, warn, and fail, daily trends, and the open issues: blocking failures and errors, then latest-interval anomalies, then non-blocking failures. |
-| Models | Every model with its status, owner, recent interval health, failing audits, anomalies, and latest interval. |
-| Model page | Owner, version, interval health, a chart for run duration and for each metric with its expected band and anomaly markers, columns, schema changes, and audit history. |
+| Models | Every model with its status, owner, recent interval health, failing audits, anomalies, downstream count, and latest interval. |
+| Model page | Owner, version, downstream count, interval health, a chart for run duration and for each metric with its expected band and anomaly markers, its direct upstream and downstream models, columns, schema changes, and audit history. |
+| Lineage | One model's upstream and downstream models as a graph, or the Impact list of models with open issues by how many models they affect. See [Lineage](#lineage). |
 | Test results | Each audit's latest interval by default, or every interval. |
 | Incidents | Every failed audit in scope. |
 | Runs | Recent plans and runs, with counts and durations. |
@@ -65,6 +66,32 @@ promoted.
 
 Filters are kept in the page address, so a link such as
 `report.html#models?status=fail&owner=team-03` opens with them applied.
+
+## Lineage
+
+Lineage comes from SQLMesh state: each snapshot in the environment records the models it reads.
+That includes external models declared in the project and new models whose plan was stopped
+before promotion. The report never loads your model files to get it.
+
+The **Graph** shows one model with its upstream models to the left and downstream models to the
+right. It opens on the model whose open issue affects the most downstream models. Click any
+model to centre the graph on it.
+
+- **Depth** (1, 2, 3, or all) sets how many levels to follow each way. The default is 2.
+- **Direction** shows upstream, downstream, or both.
+- **Issues only** keeps the chosen model and the models with failures or anomalies, and folds
+  the healthy models between them into one "N healthy models" step.
+
+Each model shows its status, its failed audits and anomalies, and how many models are
+downstream of it (`501↓`). External models have a dashed outline. A graph draws at most 150
+models, and at most 20 in one column; the rest of a column folds into "+N more", which lists
+them when clicked.
+
+**Impact** lists every model with an open issue, sorted by how many models depend on it,
+directly or further down. Expand a row to see those models. The open issues on the dashboard
+and the models list show the same downstream count.
+
+Without JavaScript, each open issue lists its direct downstream models.
 
 ## History window
 
@@ -126,7 +153,7 @@ Requests are handled one at a time. Each one reads the log and SQLMesh state aga
 ## The data format
 
 The JSON embedded in the page (and served at `/data.json`) carries a `schema_version`, currently
-`1`. A page that meets a version it doesn't know shows only the no-JavaScript summary. The fields
+`2` (version 2 added lineage). A page that meets a version it doesn't know shows only the no-JavaScript summary. The fields
 are documented in `src/sqlmesh_observability/payload.py`; they may change before 1.0, and any
 change bumps `schema_version`.
 

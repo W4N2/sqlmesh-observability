@@ -312,6 +312,36 @@ pre.sql {
 .null { color: var(--t3); font-style: italic; }
 .detail-error { color: var(--red); white-space: pre-wrap; font-family: var(--mono); font-size: 12.5px; margin: 0 0 12px; }
 
+/* Lineage */
+.lineage-controls .seg { flex: none; }
+.lineage-canvas { overflow: auto; max-height: 72vh; padding: 8px; background: var(--ground); border-radius: 0 0 8px 8px; }
+.lineage-canvas svg { display: block; margin: 0 auto; }
+.lineage .edge { fill: none; stroke: var(--seam-strong); stroke-width: 1.5; }
+.lineage .node rect { fill: var(--panel); stroke: var(--seam); stroke-width: 1; }
+.lineage a.node:hover rect, .lineage a.node:focus-visible rect { stroke: var(--blue); }
+.lineage a.node:focus { outline: none; }
+.lineage .node.focus rect { stroke: var(--series); stroke-width: 2; fill: var(--blue-bg); }
+.lineage .node.external rect { stroke-dasharray: 4 3; fill: var(--raised); }
+.lineage .node .name { fill: var(--t1); font: 600 12.5px var(--mono); }
+.lineage .node .sub { fill: var(--t3); font: 11.5px var(--sans); }
+.lineage .node .impact { fill: var(--t2); font: 600 11.5px var(--sans); }
+.lineage .node .dot { fill: var(--grey); }
+.lineage .node .dot.pass { fill: var(--green-mark); } .lineage .node .dot.warn { fill: var(--amber-mark); }
+.lineage .node .dot.fail { fill: var(--red-mark); }
+.lineage .node.more, .lineage .node.step { cursor: pointer; }
+.lineage .node.more rect, .lineage .node.step rect { fill: var(--raised); stroke-dasharray: 4 3; }
+.lineage .node.more:hover rect, .lineage .node.step:hover rect, .lineage .node.more:focus-visible rect, .lineage .node.step:focus-visible rect { stroke: var(--blue); }
+.lineage .node.more .name, .lineage .node.step .name { font: 600 12px var(--sans); fill: var(--t2); }
+.lineage-more { border-top: 1px solid var(--seam); padding: 12px 16px; }
+.lineage-more h3 { font-size: 13px; margin-bottom: 8px; }
+.lineage-more ul, .impact-list { list-style: none; margin: 0; padding: 0; columns: 3 220px; column-gap: 20px; }
+.lineage-more li, .impact-list li { display: flex; align-items: center; gap: 6px; padding: 2px 0; break-inside: avoid; }
+.lineage-panel dl { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px 12px; margin: 0; }
+.lineage-panel dt { color: var(--t3); }
+.lineage-panel dd { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-link { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 5px; background: var(--raised); color: var(--t1); }
+a.chip-link:hover { text-decoration: none; background: var(--hover); }
+
 /* Jump search */
 .jump { position: relative; }
 .jump .field { width: 240px; }

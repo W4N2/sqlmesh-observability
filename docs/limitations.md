@@ -23,4 +23,7 @@
   there is no date-range picker.
 - **Time zones.** Audit day buckets use the warehouse session time zone. Freshness compares
   naive timestamps with SQLMesh's UTC execution time.
+- **Lineage is model-level.** There is no column-level lineage, and tables SQLMesh doesn't know
+  as models (undeclared raw tables) don't appear. Declare them as external models to see them.
+  Lineage needs SQLMesh state; when state can't be read, the Lineage view says so.
 - **Alerts:** see [Alerts, things to know](alerts.md#things-to-know).

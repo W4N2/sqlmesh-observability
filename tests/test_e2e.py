@@ -189,6 +189,15 @@ def test_e2e_prod_report_and_alert(project: Path, probe: Probe) -> None:
     ]
     daily = next(m for m in payload["models"] if m["n"].endswith('"daily"'))
     assert daily["st"] == "warn"
+
+    # Lineage from state: obs.summary reads obs.daily (raw.events isn't a declared model).
+    lineage = payload["lineage"]
+    names = [m["n"] for m in payload["models"]] + lineage["extra"]
+    edges = {(leaf(p), leaf(c)) for c, ps in enumerate(lineage["parents"]) for p in ps}
+    assert edges == {("daily", "summary")}
+    assert lineage["impact"][names.index(daily["n"])] == 1
+    daily_impacts = [i["impact"] for i in payload["issues"] if leaf(i["model"]) == "daily"]
+    assert daily_impacts and set(daily_impacts) == {1}
     assert {payload["audits"][row[1]][0] for row in daily["a"]} >= {"not_null", "volume_anomaly"}
 
     # App: the same data, live.

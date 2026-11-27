@@ -47,7 +47,7 @@ def _model(payload: t.Dict[str, t.Any], leaf: str) -> t.Dict[str, t.Any]:
 def test_payload_is_versioned() -> None:
     payload = payload_for(build_scale_data(n=3, days=10, failing=1, warning=0, anomalous=0))
 
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     assert payload["environment"] == "prod"
     assert payload["generated_at"].startswith("2024-03-31")
     assert payload["state_available"] is True
@@ -254,3 +254,77 @@ def test_fallback_is_readable_without_javascript() -> None:
         assert issue_model in text
     assert "not_null columns := (payment_id)" in text
     assert "not_null_non_blocking columns := (status)" in text
+
+
+def test_payload_is_schema_version_2_with_lineage() -> None:
+    payload = payload_for(build_scale_data(n=30, days=10, failing=2, warning=3, anomalous=4))
+    assert payload["schema_version"] == 2
+
+    lineage = payload["lineage"]
+    names = [m["n"] for m in payload["models"]] + lineage["extra"]
+    # Sources have no observability rows: they are lineage-only nodes after the models, and
+    # they don't change the summary's model counts.
+    assert lineage["extra"] == [f"demo.raw.source_{i:02d}" for i in range(20)]
+    assert sum(payload["summary"]["models"].values()) == 30
+    assert len(lineage["parents"]) == len(lineage["kind"]) == len(lineage["impact"]) == 50
+    assert lineage["kinds"][lineage["kind"][names.index("demo.raw.source_00")]] == "EXTERNAL"
+
+    model_0 = names.index("demo.mart_00.model_0000")
+    assert [names[p] for p in lineage["parents"][model_0]] == ["demo.raw.source_00"]
+    # source_00 feeds model_0000 and model_0020, which feed nothing at this size.
+    assert lineage["impact"][names.index("demo.raw.source_00")] == 2
+
+
+def test_impact_counts_transitive_descendants_and_issues_carry_them() -> None:
+    payload = payload_for(build_scale_data(n=1500, days=10))
+    lineage = payload["lineage"]
+    names = [m["n"] for m in payload["models"]] + lineage["extra"]
+    children: t.Dict[int, t.List[int]] = {}
+    for child, parents in enumerate(lineage["parents"]):
+        for parent in parents:
+            children.setdefault(parent, []).append(child)
+
+    def descendants(node: int) -> int:
+        seen: t.Set[int] = set()
+        stack = list(children.get(node, []))
+        while stack:
+            current = stack.pop()
+            if current not in seen:
+                seen.add(current)
+                stack.extend(children.get(current, []))
+        return len(seen)
+
+    fan_out = names.index("demo.mart_03.model_0300")
+    assert len(children[fan_out]) == 400
+    for node in (
+        fan_out,
+        names.index("demo.mart_00.model_0000"),
+        names.index("demo.raw.source_00"),
+    ):
+        assert lineage["impact"][node] == descendants(node)
+    for issue in payload["issues"]:
+        assert issue["impact"] == lineage["impact"][issue["model"]]
+    assert max(i["impact"] for i in payload["issues"] if i["kind"] == "blocking") > 0
+
+
+def test_lineage_is_empty_without_state() -> None:
+    from dataclasses import replace
+
+    data = replace(build_scale_data(n=3, days=5), lineage=())
+    lineage = payload_for(data)["lineage"]
+    assert lineage["extra"] == [] and lineage["parents"] == [[], [], []]
+    assert lineage["kind"] == [-1, -1, -1] and lineage["impact"] == [0, 0, 0]
+
+
+def test_fallback_names_each_issues_direct_downstream_models() -> None:
+    import re
+
+    from sqlmesh_observability.report import render_report
+
+    document = render_report(build_scale_data(n=1500, days=10))
+    failures = document[document.index('id="overview-failures"') :]
+    failures = failures[: failures.index("</tbody>")]
+    row = re.search(r"<tr><td><code>demo\.mart_00\.model_0000</code>.*?</tr>", failures, re.S)
+    assert row, "model_0000's issue row"
+    assert "Downstream" in document[: document.index('id="overview-failures"')]  # column head
+    assert "mart_03.model_0300" in row.group(0)

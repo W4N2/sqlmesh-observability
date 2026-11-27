@@ -37,6 +37,9 @@ The [demo report](demo/index.html) is rebuilt from the current code on every cha
 4. A new `payments` model fails its blocking `not_null` audit, so prod is not promoted. The
    report still shows the failure, with sample rows.
 
+`raw.orders` is declared as an external model feeding `orders`, which feeds `daily_revenue` and
+`payments`, so the Lineage tab has a small graph to show.
+
 The [1,500-model demo](demo/scale.html) shows the report at scale: seeded data for 1,500 models
 across 15 schemas and 20 owners, with 90 days of history cut to the latest 30 intervals.
 

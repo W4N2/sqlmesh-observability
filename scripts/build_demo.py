@@ -17,6 +17,9 @@ The history gives the report something to show:
   statuses, and a jump in average amount.
 - A forward-only change that adds a column to orders (a schema change).
 - A new payments model whose blocking audit fails, so prod is not promoted.
+
+Lineage: ``raw.orders`` is declared as an external model and feeds ``analytics.orders``, which
+feeds ``analytics.daily_revenue``; ``analytics.payments`` reads ``analytics.orders`` too.
 """
 
 from __future__ import annotations
@@ -78,6 +81,18 @@ def build(root: Path, output: Path) -> Path:
     (root / "models").mkdir(parents=True)
     (root / "config.py").write_text(CONFIG.replace("__DB__", repr(str(root / "demo.duckdb"))))
     copy_audits(root)
+    (root / "external_models.yaml").write_text(
+        "- name: raw.orders\n  columns:\n    ds: date\n    id: int\n    status: text\n"
+        "    amount: double\n    updated_at: timestamp\n"
+    )
+    _model(
+        root,
+        "analytics.daily_revenue",
+        "SELECT ds, COUNT(*) AS orders, SUM(amount) AS revenue FROM analytics.orders "
+        "WHERE ds BETWEEN @start_ds AND @end_ds GROUP BY ds",
+        "not_null(columns := (revenue))",
+        "finance-team",
+    )
     _model(root, "analytics.orders", ORDERS, ORDERS_AUDITS, "commerce-team")
     _model(
         root,
@@ -127,7 +142,7 @@ def build(root: Path, output: Path) -> Path:
         "analytics.payments",
         "SELECT CAST(@start_ds AS DATE) AS ds, "
         "CASE WHEN i % 4 = 0 THEN NULL ELSE i END AS payment_id, i * 1.5 AS amount "
-        "FROM range(8) t(i)",
+        "FROM range(8) t(i) WHERE EXISTS (SELECT 1 FROM analytics.orders)",
         "not_null(columns := (payment_id))",
         "payments-team",
     )

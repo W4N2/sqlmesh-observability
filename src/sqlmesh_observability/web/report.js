@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  var SCHEMA_VERSION = 1;
+  var SCHEMA_VERSION = 2;
   var RH = 36; // list row height, px; matches --row in report.css
   var THEME_KEY = "sqlmesh-observe-theme";
   var TREE_KEY = "sqlmesh-observe-tree";
@@ -142,6 +142,28 @@
   var groupsBySchema = {};
   models.forEach(function (m) { groupsBySchema[m.group] = 1; });
   var schemas = Object.keys(groupsBySchema).sort();
+
+  // Lineage: node i < models.length is models[i]; later nodes are models with no
+  // observability rows (external sources, say). See payload.py.
+  var L = D.lineage;
+  var lineageNodes = models.map(function (m) { return { i: m.i, name: m.name, display: m.display, leaf: m.leaf, group: m.group, st: m.st, model: m }; });
+  L.extra.forEach(function (name, k) {
+    var s = name.replace(/"/g, ""), parts = s.split(".");
+    var p = dropCatalog && parts.length === 3 ? parts.slice(1) : parts;
+    lineageNodes.push({ i: models.length + k, name: name, display: p.join("."), leaf: p[p.length - 1],
+      group: p.length > 1 ? p.slice(0, -1).join(".") : "", st: "none", model: null });
+  });
+  var lineageChildren = lineageNodes.map(function () { return []; });
+  L.parents.forEach(function (ps, child) { ps.forEach(function (p) { lineageChildren[p].push(child); }); });
+  lineageNodes.forEach(function (n) {
+    n.kind = L.kind[n.i] >= 0 ? L.kinds[L.kind[n.i]] : null;
+    n.impact = L.impact[n.i];
+    n.parents = L.parents[n.i];
+    n.children = lineageChildren[n.i];
+    if (n.model) n.model.impact = n.impact;
+  });
+  var lineageByName = {};
+  lineageNodes.forEach(function (n) { lineageByName[n.name] = n; });
 
   function familyOf(metric) {
     return metric === "row_count" ? "volume" : metric === "freshness_lag_seconds" ? "freshness" : "columns";
@@ -673,6 +695,7 @@
   var TABS = [
     ["overview", "Dashboard", null],
     ["models", "Models", '<span class="count' + (failing ? " fail" : warning ? " warn" : "") + '">' + num(counts.models) + "</span>"],
+    ["lineage", "Lineage", null],
     ["tests", "Test results", '<span class="count">' + num(D.summary.audits.pass + D.summary.audits.warn + D.summary.audits.fail + D.summary.audits.error) + "</span>"],
     ["incidents", "Incidents", counts.incidents ? '<span class="count fail">' + num(counts.incidents) + "</span>" : null],
     ["runs", "Runs", null],
@@ -933,15 +956,17 @@
     function rowsFor(f) { return issues.filter(function (i) { return f === "all" || i.kind === f || (f === "blocking" && i.kind === "error"); }); }
     var list = new List(host, {
       cols: [{ label: "Model", w: "minmax(200px,1.3fr)" }, { label: "Signal", w: "minmax(180px,1.4fr)" }, { label: "Interval", w: "110px" },
-        { label: "Value", w: "minmax(120px,0.8fr)", num: true }, { label: "Severity", w: "110px" }],
-      rows: rowsFor(filter), group: function (i) { return GROUP[i.kind]; }, min: 760, empty: "No open issues",
+        { label: "Value", w: "minmax(120px,0.8fr)", num: true }, { label: "Severity", w: "110px" },
+        { label: "Downstream", w: "96px", num: true }],
+      rows: rowsFor(filter), group: function (i) { return GROUP[i.kind]; }, min: 860, empty: "No open issues",
       cells: function (i) {
         var m = models[i.model];
         var sig = i.kind === "anomaly" ? esc(metricLabel(i.signal, i.column)) + ' <span class="args"><code>' + esc(i.signal) + "</code></span>" : useLabel(i.use);
         var val = i.kind === "anomaly" ? '<span class="strong">' + esc(num(i.value)) + '</span><span class="exp">expected ' + esc(num(i.lo)) + " – " + esc(num(i.hi)) + "</span>" :
           '<span class="strong">' + esc(i.value == null ? "-" : plural(i.value, "row")) + '</span><span class="exp">expected 0</span>';
         var sev = i.kind === "anomaly" ? '<span class="pill warn">anomaly</span>' : kindPill(i.kind === "warning" ? "warn" : i.kind === "error" ? "error" : "fail");
-        return [m ? modelLink(m) + (m.owner ? ' <span class="sub">' + esc(m.owner) + "</span>" : "") : "-", sig, '<span class="mono">' + esc(i.interval || "-") + "</span>", val, sev];
+        return [m ? modelLink(m) + (m.owner ? ' <span class="sub">' + esc(m.owner) + "</span>" : "") : "-", sig, '<span class="mono">' + esc(i.interval || "-") + "</span>", val, sev,
+          i.impact ? '<a href="' + esc(lineageHash({ model: m ? m.name : "" })) + '">' + num(i.impact) + "</a>" : '<span class="muted">0</span>'];
       },
       expand: function (i) {
         var m = models[i.model];
@@ -998,14 +1023,16 @@
         { label: "Interval health", w: "160px" },
         { label: "Failing", w: "70px", num: true, sort: function (m) { return m.fails; } },
         { label: "Anomalies", w: "86px", num: true, sort: function (m) { return m.anoms; } },
+        { label: "Downstream", w: "100px", num: true, sort: function (m) { return m.impact || 0; } },
         { label: "Latest", w: "100px", sort: function (m) { return m.last; } }
       ],
-      sort: { i: 1, dir: 1 }, rows: rows(), min: 860, empty: "No models match these filters",
+      sort: { i: 1, dir: 1 }, rows: rows(), min: 960, empty: "No models match these filters",
       href: function (m) { return "model?name=" + encodeURIComponent(m.name); },
       cells: function (m) {
         return [modelLink(m), statusPill(m.st), m.owner ? esc(m.owner) : '<span class="muted">-</span>',
           strip(m.healthDates, m.raw.h[1], false, 16), m.fails ? '<span class="strong">' + m.fails + "</span>" : '<span class="muted">0</span>',
-          m.anoms ? '<span class="strong">' + m.anoms + "</span>" : '<span class="muted">0</span>', '<span class="mono">' + esc(day(m.last)) + "</span>"];
+          m.anoms ? '<span class="strong">' + m.anoms + "</span>" : '<span class="muted">0</span>',
+          m.impact ? num(m.impact) : '<span class="muted">0</span>', '<span class="mono">' + esc(day(m.last)) + "</span>"];
       },
       onCount: function (c) { shown.textContent = num(c) + " of " + num(models.length); }
     });
@@ -1024,7 +1051,7 @@
       '<div class="model-head"><h1>' + esc(m.leaf) + "</h1>" + statusPill(m.st) + "</div>" +
       '<ul class="facts"><li>Owner <b>' + esc(m.owner || "-") + "</b></li>" + (version ? "<li>Version <b class=\"mono\">" + esc(version) + "</b></li>" : "") +
       "<li>Latest interval <b>" + esc(day(m.last)) + "</b></li><li>Audits <b>" + latestA.length + "</b></li><li>Failing <b>" + m.fails +
-      "</b></li><li>Anomalies <b>" + m.anoms + "</b></li></ul>";
+      "</b></li><li>Anomalies <b>" + m.anoms + "</b></li><li>Downstream <b>" + num(m.impact || 0) + "</b></li></ul>";
 
     if (m.raw.h[1].length) {
       var hp = panel("Interval health", '<div class="end">' + plural(m.raw.h[1].length, "interval") + "</div>");
@@ -1044,6 +1071,25 @@
     cards.forEach(function (c) { grid.appendChild(c); });
     if (cards.length) page.appendChild(grid);
     drawCharts(grid);
+
+    var ln = lineageNodes[m.i];
+    if (ln && (ln.parents.length || ln.children.length)) {
+      var lp = panel("Lineage", '<div class="end"><a href="' + esc(lineageHash({ model: m.name })) + '">Open lineage</a></div>');
+      lp.classList.add("lineage-panel");
+      var links = function (ids) {
+        if (!ids.length) return '<span class="muted">None</span>';
+        var list = ids.map(function (i) { return lineageNodes[i]; }).sort(nodeRank);
+        var shown = list.slice(0, 30).map(function (n) {
+          var label = '<span class="dot ' + n.st + '"></span><code>' + esc(n.display) + "</code>";
+          return n.model ? '<a href="#model?name=' + encodeURIComponent(n.name) + '" class="chip-link">' + label + "</a>" :
+            '<span class="chip-link">' + label + (n.kind === "EXTERNAL" ? ' <span class="muted">external</span>' : "") + "</span>";
+        }).join("");
+        return shown + (list.length > 30 ? '<a href="' + esc(lineageHash({ model: m.name })) + '">' + num(list.length - 30) + " more</a>" : "");
+      };
+      lp.appendChild(h("div", { class: "panel-body" }, "<dl><dt>Upstream</dt><dd>" + links(ln.parents) +
+        "</dd><dt>Downstream</dt><dd>" + links(ln.children) + "</dd></dl>"));
+      page.appendChild(lp);
+    }
 
     var cp = panel("Columns", '<div class="end">' + plural(m.raw.c.length, "column") + "</div>");
     cp.appendChild(h("div", { class: "panel-body" }, m.raw.c.length ? '<div class="cols">' + m.raw.c.map(function (c) {
@@ -1176,6 +1222,307 @@
     if (P.i != null && P.i !== "") list.open(function (r) { return String(r.i) === String(P.i); });
   }
 
+  // Lineage ------------------------------------------------------------------
+
+  var CARD_W = 216, CARD_H = 52, GAP_X = 72, GAP_Y = 14, MAX_NODES = 150, LAYER_MAX = 20;
+
+  function hasIssue(n) { return n.st === "fail" || n.st === "warn"; }
+  function nodeRank(a, b) {
+    var ra = n2r(a), rb = n2r(b);
+    return ra - rb || b.impact - a.impact || (a.display < b.display ? -1 : 1);
+  }
+  function n2r(n) { return n.st === "fail" ? 0 : n.st === "warn" ? 1 : 2; }
+
+  function lineageHash(params) {
+    return hashFor("lineage", { model: params.model, depth: params.depth === "2" ? "" : params.depth,
+      dir: params.dir === "both" ? "" : params.dir, issues: params.issues === "1" ? "1" : "", view: params.view });
+  }
+
+  function collectLineage(focus, depth, dir) {
+    // Breadth-first both ways; returns {layer: {node: signed layer}, via: {node: next node toward focus}}.
+    var layer = {}, via = {};
+    layer[focus.i] = 0;
+    function walk(next, sign) {
+      var frontier = [focus.i], d = 0;
+      while (frontier.length && d < depth) {
+        d++;
+        var nextFrontier = [];
+        frontier.forEach(function (i) {
+          next(i).forEach(function (j) {
+            if (layer[j] !== undefined) return;
+            layer[j] = sign * d;
+            via[j] = i;
+            nextFrontier.push(j);
+          });
+        });
+        frontier = nextFrontier;
+      }
+    }
+    if (dir !== "down") walk(function (i) { return lineageNodes[i].parents; }, -1);
+    if (dir !== "up") walk(function (i) { return lineageNodes[i].children; }, 1);
+    return { layer: layer, via: via };
+  }
+
+  function buildGraph(focus, depth, dir, issuesOnly) {
+    var c = collectLineage(focus, depth, dir), items = {}, edges = [];
+    function add(item) { items[item.id] = item; return item; }
+    if (!issuesOnly) {
+      Object.keys(c.layer).forEach(function (k) {
+        var n = lineageNodes[+k];
+        add({ id: "n" + k, type: "model", node: n, layer: c.layer[k] });
+      });
+      Object.keys(c.layer).forEach(function (k) {
+        lineageNodes[+k].children.forEach(function (j) {
+          if (c.layer[j] !== undefined && c.layer[j] > c.layer[k]) edges.push(["n" + k, "n" + j]);
+        });
+      });
+    } else {
+      // Keep the focus and every node with an issue; collapse the healthy runs between them.
+      add({ id: "n" + focus.i, type: "model", node: focus, layer: 0 });
+      Object.keys(c.layer).forEach(function (k) {
+        var n = lineageNodes[+k];
+        if (+k === focus.i || !hasIssue(n)) return;
+        add({ id: "n" + k, type: "model", node: n, layer: c.layer[k] });
+      });
+      Object.keys(items).forEach(function (id) {
+        var start = items[id].node.i;
+        if (start === focus.i) return;
+        var run = [], cur = c.via[start], prev = "n" + start;
+        while (cur !== undefined) {
+          var curItem = items["n" + cur];
+          if (curItem) {
+            var target = curItem.id;
+            if (run.length) {
+              var stepId = "s" + run.join("-");
+              var step = items[stepId] || add({ id: stepId, type: "step", hidden: run.map(function (r) { return lineageNodes[r]; }),
+                layer: c.layer[run[Math.floor(run.length / 2)]] });
+              linkOrdered(prev, step.id, c);
+              linkOrdered(step.id, target, c);
+            } else linkOrdered(prev, target, c);
+            break;
+          }
+          run.push(cur);
+          cur = c.via[cur];
+        }
+      });
+    }
+    function linkOrdered(a, b) {
+      var la = items[a].layer, lb = items[b].layer;
+      var e = la <= lb ? [a, b] : [b, a];
+      if (!edges.some(function (x) { return x[0] === e[0] && x[1] === e[1]; })) edges.push(e);
+    }
+    return capAndPlace(items, edges, focus);
+  }
+
+  function capAndPlace(items, edges, focus) {
+    // Group by layer, keep at most MAX_NODES model nodes, fold the rest into "+N more".
+    var byLayer = {};
+    Object.keys(items).forEach(function (id) { var it = items[id]; (byLayer[it.layer] = byLayer[it.layer] || []).push(it); });
+    var layers = Object.keys(byLayer).map(Number).sort(function (a, b) { return a - b; });
+    var budget = MAX_NODES - 1, others = layers.filter(function (l) { return l !== 0; });
+    var counts = others.map(function (l) { return byLayer[l].length; });
+    var order = others.map(function (l, k) { return k; }).sort(function (a, b) { return counts[a] - counts[b]; });
+    var allow = {};
+    order.forEach(function (k, pos) {
+      var share = Math.floor(budget / (order.length - pos));
+      allow[others[k]] = Math.min(counts[k], share, LAYER_MAX);
+      budget -= allow[others[k]];
+    });
+    var hiddenTo = {};
+    others.forEach(function (l) {
+      var list = byLayer[l].sort(function (a, b) {
+        if (a.type !== b.type) return a.type === "model" ? -1 : 1;
+        return a.node && b.node ? nodeRank(a.node, b.node) : 0;
+      });
+      if (list.length <= allow[l]) return;
+      var keep = list.slice(0, Math.max(0, allow[l] - 1)), hide = list.slice(keep.length);
+      var more = { id: "m" + l, type: "more", layer: l, hidden: hide.map(function (h) { return h.node; }).filter(Boolean) };
+      hide.forEach(function (h) { hiddenTo[h.id] = more.id; delete items[h.id]; });
+      items[more.id] = more;
+      byLayer[l] = keep.concat([more]);
+    });
+    var drawnEdges = [];
+    edges.forEach(function (e) {
+      var a = hiddenTo[e[0]] || e[0], b = hiddenTo[e[1]] || e[1];
+      if (a !== b && items[a] && items[b] && !drawnEdges.some(function (x) { return x[0] === a && x[1] === b; })) drawnEdges.push([a, b]);
+    });
+    // Order within layers by the barycentre of neighbours nearer the focus, two sweeps.
+    var pos = {};
+    function setPos(l) { byLayer[l].forEach(function (it, k) { pos[it.id] = k; }); }
+    setPos(0);
+    function sweep(ls, toward) {
+      ls.forEach(function (l) {
+        byLayer[l].forEach(function (it) {
+          var ys = drawnEdges.filter(function (e) { return e[toward ? 0 : 1] === it.id || false; })
+            .map(function (e) { return pos[e[toward ? 1 : 0]]; }).filter(function (v) { return v !== undefined; });
+          it.bary = ys.length ? ys.reduce(function (x, y) { return x + y; }, 0) / ys.length : 1e9;
+        });
+        byLayer[l].sort(function (a, b) { return a.bary - b.bary || (a.type === "more" ? 1 : b.type === "more" ? -1 : 0); });
+        setPos(l);
+      });
+    }
+    for (var pass = 0; pass < 2; pass++) {
+      sweep(layers.filter(function (l) { return l > 0; }), false);
+      sweep(layers.filter(function (l) { return l < 0; }).reverse(), true);
+    }
+    var maxRows = Math.max.apply(null, layers.map(function (l) { return byLayer[l].length; }));
+    var height = maxRows * (CARD_H + GAP_Y) - GAP_Y;
+    layers.forEach(function (l, col) {
+      var list = byLayer[l], top = (height - (list.length * (CARD_H + GAP_Y) - GAP_Y)) / 2;
+      list.forEach(function (it, k) { it.x = col * (CARD_W + GAP_X); it.y = top + k * (CARD_H + GAP_Y); });
+    });
+    return { items: items, edges: drawnEdges, width: layers.length * (CARD_W + GAP_X) - GAP_X, height: height, layers: layers };
+  }
+
+  function nodeCounts(n) {
+    if (!n.model) return n.kind === "EXTERNAL" ? "external" : (n.kind || "no data").toLowerCase();
+    var parts = [];
+    if (n.model.fails) parts.push(n.model.fails + " failed");
+    if (n.model.anoms) parts.push(n.model.anoms + " anomal" + (n.model.anoms === 1 ? "y" : "ies"));
+    return parts.length ? parts.join(" · ") : (n.group ? n.group + " · " : "") + STATUS_WORD[n.st];
+  }
+
+  function drawGraph(g, params, focus, onMore) {
+    var pad = 8, svgNodes = "", svgEdges = "";
+    g.edges.forEach(function (e) {
+      var a = g.items[e[0]], b = g.items[e[1]];
+      var x1 = a.x + CARD_W + pad, y1 = a.y + CARD_H / 2 + pad, x2 = b.x + pad, y2 = b.y + CARD_H / 2 + pad, mx = (x1 + x2) / 2;
+      svgEdges += '<path class="edge" d="M' + x1 + "," + y1 + "C" + mx + "," + y1 + " " + mx + "," + y2 + " " + x2 + "," + y2 + '"/>';
+    });
+    Object.keys(g.items).forEach(function (id) {
+      var it = g.items[id], x = it.x + pad, y = it.y + pad;
+      if (it.type === "model") {
+        var n = it.node, isFocus = n.i === focus.i, st = n.st === "none" ? "none" : n.st;
+        var href = lineageHash({ model: n.name, depth: params.depth, dir: params.dir, issues: params.issues });
+        var label = n.display + ", " + (n.model ? STATUS_WORD[n.st] : "no observability data") + ", " + n.impact + " downstream";
+        svgNodes += '<a class="node model' + (isFocus ? " focus" : "") + (n.model ? "" : " external") + '" data-name="' + esc(n.name) +
+          '" href="' + esc(href) + '" aria-label="' + esc(label) + '"><title>' + esc(n.display + (n.kind ? " (" + n.kind.toLowerCase() + ")" : "")) + "</title>" +
+          '<rect x="' + x + '" y="' + y + '" width="' + CARD_W + '" height="' + CARD_H + '" rx="7"/>' +
+          '<circle class="dot ' + st + '" cx="' + (x + 14) + '" cy="' + (y + 18) + '" r="4.5"/>' +
+          '<text class="name" x="' + (x + 26) + '" y="' + (y + 22) + '">' + esc(clip(n.leaf, 24)) + "</text>" +
+          '<text class="sub" x="' + (x + 26) + '" y="' + (y + 40) + '">' + esc(clip(n.model ? nodeCounts(n) : (n.group ? n.group + " · " : "") + nodeCounts(n), 30)) + "</text>" +
+          (n.impact ? '<text class="impact" x="' + (x + CARD_W - 10) + '" y="' + (y + 22) + '" text-anchor="end">' + esc(compact(n.impact)) + "↓</text>" : "") +
+          "</a>";
+      } else {
+        var count = it.hidden.length, text = it.type === "more" ? "+" + num(count) + " more" : num(count) + " healthy model" + (count === 1 ? "" : "s");
+        svgNodes += '<g class="node ' + it.type + '" data-id="' + id + '" data-count="' + count + '" tabindex="0" role="button" aria-label="' + esc(text) + '">' +
+          '<rect x="' + x + '" y="' + (y + 8) + '" width="' + CARD_W + '" height="' + (CARD_H - 16) + '" rx="18"/>' +
+          '<text class="name" x="' + (x + CARD_W / 2) + '" y="' + (y + CARD_H / 2 + 4) + '" text-anchor="middle">' + esc(text) + "</text></g>";
+      }
+    });
+    var W = g.width + 2 * pad, H = g.height + 2 * pad;
+    return '<svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' +
+      esc("Lineage of " + focus.display) + '">' + svgEdges + svgNodes + "</svg>";
+  }
+  function clip(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+
+  function widestFocus() {
+    var best = null;
+    D.issues.forEach(function (i) { if (i.model >= 0 && (!best || i.impact > best.impact)) best = i; });
+    if (best) return lineageNodes[best.model];
+    return lineageNodes.slice().sort(function (a, b) { return a.display < b.display ? -1 : 1; })[0] || null;
+  }
+
+  function viewLineage() {
+    layoutEl.classList.add("wide");
+    var P = route.params;
+    var params = { model: P.model, depth: P.depth || "2", dir: P.dir || "both", issues: P.issues === "1" ? "1" : "", view: P.view || "" };
+    if (!lineageNodes.length || !L.parents.some(function (p) { return p.length; })) {
+      page.innerHTML = '<div class="panel"><div class="panel-head"><h2>Lineage</h2></div><div class="list-empty">' +
+        (D.state_available ? "No model dependencies in this environment" : "SQLMesh state could not be read, so lineage is unavailable") + "</div></div>";
+      return;
+    }
+    var viewSeg = seg("view", [["", "Graph"], ["impact", "Impact"]], params.view);
+    if (params.view === "impact") return viewImpact('<div class="filters lineage-controls">' + viewSeg + "</div>");
+    var focus = (params.model && lineageByName[params.model]) || widestFocus();
+    params.model = focus.name;
+    var p = h("section", { class: "panel lineage" });
+    p.innerHTML = '<div class="panel-head"><h2>Lineage</h2><span class="muted"><code>' + esc(focus.display) + "</code> · " +
+      plural(focus.impact, "model") + " downstream</span>" + (focus.model ? '<div class="end"><a href="#model?name=' +
+      encodeURIComponent(focus.name) + '">Model page</a></div>' : "") + "</div>" +
+      '<div class="filters lineage-controls">' + viewSeg +
+      seg("depth", [["1", "1"], ["2", "2"], ["3", "3"], ["all", "All"]], params.depth) +
+      seg("dir", [["up", "Upstream"], ["both", "Both"], ["down", "Downstream"]], params.dir) +
+      seg("issues", [["", "All models"], ["1", "Issues only"]], params.issues) +
+      '<span class="end shown"></span></div><div class="lineage-canvas"></div><div class="lineage-more" hidden></div>';
+    page.appendChild(p);
+    var depth = params.depth === "all" ? Infinity : +params.depth || 2;
+    var g = buildGraph(focus, depth, params.dir, params.issues === "1");
+    var canvas = p.querySelector(".lineage-canvas");
+    canvas.innerHTML = drawGraph(g, params, focus);
+    var drawn = Object.keys(g.items).filter(function (k) { return g.items[k].type === "model"; }).length;
+    p.querySelector(".shown").textContent = plural(drawn, "model") + " shown";
+    // Centre the focus in view.
+    var f = g.items["n" + focus.i];
+    if (f) { canvas.scrollLeft = Math.max(0, f.x - canvas.clientWidth / 2 + CARD_W / 2); canvas.scrollTop = Math.max(0, f.y - canvas.clientHeight / 2); }
+    var moreBox = p.querySelector(".lineage-more");
+    function openMore(el) {
+      var it = g.items[el.dataset.id];
+      moreBox.hidden = false;
+      var title = it.type === "more" ? plural(it.hidden.length, "more model") + " in this layer" : plural(it.hidden.length, "healthy model") + " on this path";
+      moreBox.innerHTML = "<h3>" + esc(title) + "</h3><ul>" + it.hidden.slice().sort(nodeRank).map(function (n) {
+        return '<li><span class="dot ' + n.st + '"></span><a href="' + esc(lineageHash({ model: n.name, depth: params.depth, dir: params.dir, issues: params.issues })) +
+          '"><code>' + esc(n.display) + "</code></a></li>";
+      }).join("") + "</ul>";
+      moreBox.scrollIntoView({ block: "nearest" });
+    }
+    canvas.addEventListener("click", function (e) { var el = e.target.closest(".node.more, .node.step"); if (el) openMore(el); });
+    canvas.addEventListener("keydown", function (e) {
+      var el = e.target.closest(".node.more, .node.step");
+      if (el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openMore(el); }
+    });
+    p.querySelectorAll(".filters .seg").forEach(function (sg) {
+      sg.addEventListener("click", function (e) {
+        var b = e.target.closest("button");
+        if (!b) return;
+        var next = { model: focus.name, depth: params.depth, dir: params.dir, issues: params.issues, view: params.view };
+        next[sg.dataset.name] = b.dataset.v;
+        location.hash = lineageHash(next);
+      });
+    });
+  }
+
+  function viewImpact(head) {
+    var p = h("section", { class: "panel" });
+    p.innerHTML = '<div class="panel-head"><h2>Lineage</h2><span class="muted">Models with open issues, by downstream reach</span></div>' + head;
+    var host = h("div");
+    p.appendChild(host);
+    page.appendChild(p);
+    p.querySelector(".seg").addEventListener("click", function (e) {
+      var b = e.target.closest("button");
+      if (b) location.hash = lineageHash({ view: b.dataset.v });
+    });
+    var seen = {}, rows = [];
+    D.issues.forEach(function (i) {
+      if (i.model < 0) return;
+      if (!seen[i.model]) { seen[i.model] = { n: lineageNodes[i.model], issues: 0 }; rows.push(seen[i.model]); }
+      seen[i.model].issues++;
+    });
+    new List(host, {
+      cols: [
+        { label: "Model", w: "minmax(220px,2fr)", sort: function (r) { return r.n.display; } },
+        { label: "Status", w: "100px", sort: function (r) { return RANK[r.n.st]; } },
+        { label: "Open issues", w: "100px", num: true, sort: function (r) { return r.issues; } },
+        { label: "Downstream", w: "110px", num: true, sort: function (r) { return r.n.impact; } },
+        { label: "", w: "110px" }
+      ],
+      sort: { i: 3, dir: -1 }, rows: rows, min: 680, empty: "No open issues",
+      cells: function (r) {
+        return [modelLink(r.n.model), statusPill(r.n.st), num(r.issues), '<span class="strong">' + num(r.n.impact) + "</span>",
+          '<a href="' + esc(lineageHash({ model: r.n.name })) + '">Lineage</a>'];
+      },
+      expand: function (r) {
+        var out = [], stack = r.n.children.slice(), seenNodes = {};
+        while (stack.length) { var c = stack.pop(); if (!seenNodes[c]) { seenNodes[c] = 1; out.push(lineageNodes[c]); stack.push.apply(stack, lineageNodes[c].children); } }
+        out.sort(nodeRank);
+        var shown = out.slice(0, 200);
+        return '<p class="muted" style="margin:0 0 8px">' + plural(out.length, "downstream model") + "</p><ul class=\"impact-list\">" + shown.map(function (n) {
+          return '<li><span class="dot ' + n.st + '"></span>' + (n.model ? modelLink(n.model) : "<code>" + esc(n.display) + "</code>") + "</li>";
+        }).join("") + "</ul>" + (out.length > shown.length ? '<p class="muted">' + num(out.length - shown.length) + " more</p>" : "");
+      }
+    });
+  }
+
   // Runs ---------------------------------------------------------------------
 
   function viewRuns() {
@@ -1244,7 +1591,7 @@
 
   // ---------------------------------------------------------------- router
 
-  var VIEWS = { overview: viewOverview, models: viewModels, model: viewModel, tests: viewTests, incidents: viewIncidents, runs: viewRuns, schema: viewSchema };
+  var VIEWS = { overview: viewOverview, models: viewModels, model: viewModel, lineage: viewLineage, tests: viewTests, incidents: viewIncidents, runs: viewRuns, schema: viewSchema };
   function render() {
     route = parse();
     if (!VIEWS[route.view]) route = { view: "overview", params: {} };
@@ -1257,7 +1604,7 @@
     page.innerHTML = "";
     VIEWS[route.view]();
     drawTree();
-    var title = { overview: "Dashboard", models: "Models", model: route.params.name, tests: "Test results", incidents: "Incidents", runs: "Runs", schema: "Schema changes" }[route.view];
+    var title = { overview: "Dashboard", models: "Models", model: route.params.name, lineage: "Lineage", tests: "Test results", incidents: "Incidents", runs: "Runs", schema: "Schema changes" }[route.view];
     document.title = title + " · sqlmesh-observe · " + D.environment;
   }
   var lastHash = null;

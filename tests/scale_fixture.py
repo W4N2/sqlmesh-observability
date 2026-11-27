@@ -14,6 +14,11 @@ Shape, with ``n`` models and ``days`` daily intervals ending on ``END``:
 * ``anomalous`` models: a ``row_count`` spike on the last day;
 * every third model: a ``freshness_lag_seconds`` series; every tenth: ``null_rate`` on ``amount``;
 * every 250th model: an added column.
+
+Lineage: 20 external sources ``demo.raw.source_00`` .. feed models 0-299 (one each); every later
+model reads one to three of the 200 models before it (models 300-399 also read model ``m - 300``),
+and ``model_0300`` feeds models 1000-1399, a 400-child
+fan-out. The failing models are early, so their downstream impact is wide.
 """
 
 from __future__ import annotations
@@ -43,6 +48,7 @@ def build_scale_data(
     from sqlmesh_observability.reader import (
         AuditRecord,
         InvocationRecord,
+        LineageNode,
         MetricPoint,
         MetricSeries,
         RunRecord,
@@ -176,6 +182,26 @@ def build_scale_data(
         for i in reversed(range(days))
     ][:50]
 
+    names = [f"demo.mart_{m // 100:02d}.model_{m:04d}" for m in range(n)]
+    lineage_rng = random.Random(seed + 1)
+    nodes = [
+        LineageNode(model_name=f"demo.raw.source_{i:02d}", kind="EXTERNAL", parents=())
+        for i in range(20)
+    ]
+    for m, name in enumerate(names):
+        if m < min(n, 300):
+            parents: t.Tuple[str, ...] = (f"demo.raw.source_{m % 20:02d}",)
+        elif 1000 <= m < 1400 and n > 300:
+            parents = (names[300],)
+        else:
+            picks = set(lineage_rng.sample(range(max(0, m - 200), m), lineage_rng.randint(1, 3)))
+            if m < 400:
+                picks.add(m - 300)  # models 0-99, the failing ones among them, feed onward
+            parents = tuple(sorted(names[p] for p in picks))
+        kind = "INCREMENTAL_BY_TIME_RANGE" if m % 4 else "FULL"
+        nodes.append(LineageNode(model_name=name, kind=kind, parents=parents))
+    lineage = tuple(sorted(nodes, key=lambda node: node.model_name))
+
     state = _StateSnapshotInfo(
         active_versions=frozenset(versions), owners=owners, columns=columns, gateway="warehouse"
     )
@@ -190,6 +216,7 @@ def build_scale_data(
         runs=runs,
         invocations=invocations,
         monitors=("volume", "freshness", "schema", "columns"),
+        lineage=lineage,
     )
     from dataclasses import replace
 

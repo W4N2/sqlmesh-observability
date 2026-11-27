@@ -33,6 +33,15 @@ Schema version 1::
     signals   {audits, volume, freshness, schema, columns: {pass, warn, fail} | null}
     runs      [{id, command, environment, status, started_at, finished_at, duration_ms,
                 model_runs, failed_runs, audits, failing_audits, blocking_failures}]
+    lineage   {extra: [model names], kinds: [kind names],
+               kind: [kind index or -1], parents: [[node indexes]], impact: [count]}
+
+    Lineage nodes ``0 .. len(models) - 1`` are ``models``; node ``len(models) + i`` is
+    ``extra[i]``, a model in the environment with no observability rows (an external source,
+    say). ``impact`` is the number of distinct models downstream of each node. Each issue
+    carries its model's ``impact``.
+
+Version 2 added ``lineage`` and ``issues[].impact``.
 
 Codes: ``health`` 0 pass, 1 warn, 2 fail, 3 error, 4 skip. Audit ``status`` 0 pass, 1 fail,
 2 error, 3 skip. Point ``flags`` bit 1 anomaly, bit 2 error, bit 4 still training. Indexes are
@@ -55,7 +64,7 @@ if t.TYPE_CHECKING:
         ReportData,
     )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_HISTORY = 30
 
 _HEALTH = {"pass": 0, "warn": 1, "fail": 2, "error": 3, "skip": 4}
@@ -431,12 +440,55 @@ def build_payload(data: "ReportData", history: int = DEFAULT_HISTORY) -> t.Dict[
             for inv in data.invocations
         ],
     }
+    lineage = _lineage(data, model_index)
+    payload["lineage"] = lineage
+    for issue in issues:
+        issue["impact"] = lineage["impact"][issue["model"]] if issue["model"] >= 0 else 0
     # Tables last: everything above interned into them.
     payload["dates"] = list(tables.dates)
     payload["owners"] = list(tables.owners)
     payload["audits"] = [list(use) for use in tables.uses]
     payload["metrics"] = list(tables.metrics)
     return _sort_dates(payload)
+
+
+def _lineage(data: "ReportData", model_index: t.Mapping[str, int]) -> t.Dict[str, t.Any]:
+    """Every model in the environment as one node table, with parents and downstream impact."""
+    index = dict(model_index)
+    extra = [n.model_name for n in data.lineage if n.model_name not in index]
+    for name in extra:
+        index[name] = len(index)
+    size = len(index)
+    kinds: t.Dict[str, int] = {}
+    kind = [-1] * size
+    parents: t.List[t.List[int]] = [[] for _ in range(size)]
+    children: t.List[t.List[int]] = [[] for _ in range(size)]
+    for node in data.lineage:
+        i = index[node.model_name]
+        if node.kind is not None:
+            kind[i] = kinds.setdefault(node.kind, len(kinds))
+        for parent in node.parents:
+            if parent in index:
+                parents[i].append(index[parent])
+                children[index[parent]].append(i)
+
+    impact = []
+    for start in range(size):  # breadth-first over children; ``seen`` guards any cycle
+        seen = {start}
+        queue = list(children[start])
+        while queue:
+            current = queue.pop()
+            if current not in seen:
+                seen.add(current)
+                queue.extend(children[current])
+        impact.append(len(seen) - 1)
+    return {
+        "extra": extra,
+        "kinds": list(kinds),
+        "kind": kind,
+        "parents": [sorted(p) for p in parents],
+        "impact": impact,
+    }
 
 
 def _audit_issue(
