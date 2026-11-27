@@ -214,6 +214,10 @@ def test_lineage_focuses_one_model_with_depth_and_direction(
     focus = page.locator(".lineage .node.focus")
     expect(focus).to_have_count(1)
     assert focus.get_attribute("data-name") == "demo.mart_00.model_0000"
+    card = focus.locator("text").all_text_contents()
+    assert "mart_00 · full · team-00" in card  # schema, kind, owner
+    assert "not_null (payment_id)" in card  # the failing audit by name
+    assert "501 downstream" in card
     names = _nodes(page)
     assert "demo.raw.source_00" in names  # its external parent
     assert "demo.mart_03.model_0300" in names  # its child

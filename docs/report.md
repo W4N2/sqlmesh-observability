@@ -82,8 +82,9 @@ model to centre the graph on it.
 - **Issues only** keeps the chosen model and the models with failures or anomalies, and folds
   the healthy models between them into one "N healthy models" step.
 
-Each model shows its status, its failed audits and anomalies, and how many models are
-downstream of it (`501↓`). External models have a dashed outline. A graph draws at most 150
+Each model's card shows its status, schema, kind, and owner, how many models are downstream of
+it, and the names of its failed audits and anomalous metrics (or its latest interval when
+healthy). External models have a dashed outline. A graph draws at most 150
 models, and at most 20 in one column; the rest of a column folds into "+N more", which lists
 them when clicked.
 

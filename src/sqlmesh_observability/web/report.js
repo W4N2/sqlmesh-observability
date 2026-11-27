@@ -1224,7 +1224,7 @@
 
   // Lineage ------------------------------------------------------------------
 
-  var CARD_W = 216, CARD_H = 52, GAP_X = 72, GAP_Y = 14, MAX_NODES = 150, LAYER_MAX = 20;
+  var CARD_W = 284, CARD_H = 92, GAP_X = 64, GAP_Y = 14, MAX_NODES = 150, LAYER_MAX = 20;
 
   function hasIssue(n) { return n.st === "fail" || n.st === "warn"; }
   function nodeRank(a, b) {
@@ -1374,6 +1374,44 @@
     return { items: items, edges: drawnEdges, width: layers.length * (CARD_W + GAP_X) - GAP_X, height: height, layers: layers };
   }
 
+  function kindWord(kind) {
+    // Short enough for a card; the full SQLMesh kind is in the card's tooltip.
+    if (!kind) return "";
+    if (/^INCREMENTAL/.test(kind)) return "incremental";
+    if (/^SCD_TYPE_2/.test(kind)) return "SCD type 2";
+    return kind.toLowerCase().replace(/_/g, " ");
+  }
+
+  function nodeIssues(n) {
+    // [kind, text] for each failing audit (latest interval) and each anomalous metric.
+    if (!n.model) return [];
+    var out = [];
+    n.model.raw.a.forEach(function (row) {
+      if (!row.latest || (row[2] !== 1 && row[2] !== 2)) return;
+      var use = D.audits[row[1]] || ["?", ""], cols = /columns?\s*:=\s*\(?([^)]*)\)?/.exec(use[1] || "");
+      out.push([row[2] === 2 || row[4] ? "fail" : "warn", use[0] + (cols ? " (" + cols[1].trim() + ")" : "")]);
+    });
+    n.model.series.forEach(function (sr) {
+      if (sr.flags.length && sr.flags[sr.flags.length - 1] & 1) out.push(["warn", sr.metric + (sr.column ? " (" + sr.column + ")" : "") + " anomaly"]);
+    });
+    return out.sort(function (a, b) { return (a[0] === "fail" ? 0 : 1) - (b[0] === "fail" ? 0 : 1); });
+  }
+
+  function cardLines(n) {
+    // Lines 2-4 of a lineage card: [class, text].
+    var meta = [n.group, kindWord(n.kind), n.model && n.model.owner].filter(Boolean).join(" · ");
+    if (!n.model) return [["meta", meta], ["muted", "No observability data"]];
+    var issues = nodeIssues(n), lines = [["meta", meta]];
+    if (issues.length) {
+      lines.push([issues[0][0], issues[0][1]]);
+      if (issues.length >= 2) lines.push([issues[1][0], issues[1][1], issues.length > 2 ? "+" + (issues.length - 2) + " more" : ""]);
+    } else {
+      var passing = n.model.raw.a.filter(function (r) { return r.latest; }).length;
+      lines.push(["muted", "Latest " + day(n.model.last) + (passing ? " · " + plural(passing, "audit") + (passing === 1 ? " passes" : " pass") : "")]);
+    }
+    return lines;
+  }
+
   function nodeCounts(n) {
     if (!n.model) return n.kind === "EXTERNAL" ? "external" : (n.kind || "no data").toLowerCase();
     var parts = [];
@@ -1394,19 +1432,24 @@
       if (it.type === "model") {
         var n = it.node, isFocus = n.i === focus.i, st = n.st === "none" ? "none" : n.st;
         var href = lineageHash({ model: n.name, depth: params.depth, dir: params.dir, issues: params.issues });
-        var label = n.display + ", " + (n.model ? STATUS_WORD[n.st] : "no observability data") + ", " + n.impact + " downstream";
+        var label = n.display + ", " + (n.model ? STATUS_WORD[n.st] : "no observability data") + ", " + n.impact + " downstream" +
+          nodeIssues(n).map(function (i) { return ", " + i[1]; }).join("");
         svgNodes += '<a class="node model' + (isFocus ? " focus" : "") + (n.model ? "" : " external") + '" data-name="' + esc(n.name) +
-          '" href="' + esc(href) + '" aria-label="' + esc(label) + '"><title>' + esc(n.display + (n.kind ? " (" + n.kind.toLowerCase() + ")" : "")) + "</title>" +
+          '" href="' + esc(href) + '" aria-label="' + esc(label) + '"><title>' + esc([n.display + (n.kind ? " (" + n.kind + ")" : "")].concat(cardLines(n).slice(1).map(function (l) { return l[1]; })).join("\n")) + "</title>" +
           '<rect x="' + x + '" y="' + y + '" width="' + CARD_W + '" height="' + CARD_H + '" rx="7"/>' +
           '<circle class="dot ' + st + '" cx="' + (x + 14) + '" cy="' + (y + 18) + '" r="4.5"/>' +
           '<text class="name" x="' + (x + 26) + '" y="' + (y + 22) + '">' + esc(clip(n.leaf, 24)) + "</text>" +
-          '<text class="sub" x="' + (x + 26) + '" y="' + (y + 40) + '">' + esc(clip(n.model ? nodeCounts(n) : (n.group ? n.group + " · " : "") + nodeCounts(n), 30)) + "</text>" +
-          (n.impact ? '<text class="impact" x="' + (x + CARD_W - 10) + '" y="' + (y + 22) + '" text-anchor="end">' + esc(compact(n.impact)) + "↓</text>" : "") +
+          (n.impact ? '<text class="impact" x="' + (x + CARD_W - 12) + '" y="' + (y + 22) + '" text-anchor="end">' + esc(compact(n.impact)) + " downstream</text>" : "") +
+          cardLines(n).map(function (line, k) {
+            var ly = y + 42 + k * 17, more = line[2] || "";
+            return '<text class="line ' + line[0] + '" x="' + (x + 26) + '" y="' + ly + '">' + esc(clip(line[1], more ? 32 : 40)) + "</text>" +
+              (more ? '<text class="line muted" x="' + (x + CARD_W - 12) + '" y="' + ly + '" text-anchor="end">' + esc(more) + "</text>" : "");
+          }).join("") +
           "</a>";
       } else {
         var count = it.hidden.length, text = it.type === "more" ? "+" + num(count) + " more" : num(count) + " healthy model" + (count === 1 ? "" : "s");
         svgNodes += '<g class="node ' + it.type + '" data-id="' + id + '" data-count="' + count + '" tabindex="0" role="button" aria-label="' + esc(text) + '">' +
-          '<rect x="' + x + '" y="' + (y + 8) + '" width="' + CARD_W + '" height="' + (CARD_H - 16) + '" rx="18"/>' +
+          '<rect x="' + x + '" y="' + (y + CARD_H / 2 - 18) + '" width="' + CARD_W + '" height="36" rx="18"/>' +
           '<text class="name" x="' + (x + CARD_W / 2) + '" y="' + (y + CARD_H / 2 + 4) + '" text-anchor="middle">' + esc(text) + "</text></g>";
       }
     });

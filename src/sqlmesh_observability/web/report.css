@@ -323,8 +323,11 @@ pre.sql {
 .lineage .node.focus rect { stroke: var(--series); stroke-width: 2; fill: var(--blue-bg); }
 .lineage .node.external rect { stroke-dasharray: 4 3; fill: var(--raised); }
 .lineage .node .name { fill: var(--t1); font: 600 12.5px var(--mono); }
-.lineage .node .sub { fill: var(--t3); font: 11.5px var(--sans); }
-.lineage .node .impact { fill: var(--t2); font: 600 11.5px var(--sans); }
+.lineage .node .line { fill: var(--t2); font: 11.5px var(--sans); }
+.lineage .node .line.meta, .lineage .node .line.muted { fill: var(--t3); }
+.lineage .node .line.fail { fill: var(--red); font-weight: 600; }
+.lineage .node .line.warn { fill: var(--amber); font-weight: 600; }
+.lineage .node .impact { fill: var(--t3); font: 11.5px var(--sans); }
 .lineage .node .dot { fill: var(--grey); }
 .lineage .node .dot.pass { fill: var(--green-mark); } .lineage .node .dot.warn { fill: var(--amber-mark); }
 .lineage .node .dot.fail { fill: var(--red-mark); }

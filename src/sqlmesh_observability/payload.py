@@ -51,6 +51,7 @@ Codes: ``health`` 0 pass, 1 warn, 2 fail, 3 error, 4 skip. Audit ``status`` 0 pa
 from __future__ import annotations
 
 import json
+import logging
 import typing as t
 
 from sqlmesh_observability.reader import audit_key
@@ -63,6 +64,8 @@ if t.TYPE_CHECKING:
         ModelReport,
         ReportData,
     )
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 2
 DEFAULT_HISTORY = 30
@@ -472,16 +475,16 @@ def _lineage(data: "ReportData", model_index: t.Mapping[str, int]) -> t.Dict[str
                 parents[i].append(index[parent])
                 children[index[parent]].append(i)
 
-    impact = []
-    for start in range(size):  # breadth-first over children; ``seen`` guards any cycle
-        seen = {start}
-        queue = list(children[start])
-        while queue:
-            current = queue.pop()
-            if current not in seen:
-                seen.add(current)
-                queue.extend(children[current])
-        impact.append(len(seen) - 1)
+    from sqlmesh.utils.dag import DAG
+
+    impact = [0] * size
+    try:
+        dag: "DAG[int]" = DAG({i: set(p) for i, p in enumerate(parents)})
+        for i in range(size):
+            if children[i]:
+                impact[i] = len(dag.downstream(i))
+    except Exception:  # SQLMesh's DAG refuses a cycle; state should never hold one
+        logger.debug("sqlmesh-observability: lineage has a cycle; impact counts off", exc_info=True)
     return {
         "extra": extra,
         "kinds": list(kinds),
