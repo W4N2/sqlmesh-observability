@@ -110,6 +110,11 @@ User-visible behavior lives in `docs/`. When you change an option, a command, a 
 report or alerts show, update the matching page in the same change. `mkdocs build --strict` must
 pass; it fails on broken links.
 
+## Changelog
+
+Add every user-visible change (option, command, table, report, alert, fix) under
+`## [Unreleased]` in `CHANGELOG.md`, in the same change. Mark breaking changes **Breaking**.
+
 ## Commits
 
 - Commit only when the maintainer asks.

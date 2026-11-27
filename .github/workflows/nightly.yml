@@ -1,0 +1,99 @@
+name: nightly
+
+# Early warning while the execution-observation API is unreleased:
+# - test-main runs the suite and mypy against SQLMesh main HEAD, so an upstream change to the API
+#   shows up before it reaches a release; a failure opens (or comments on) an issue.
+# - release-watch checks PyPI for a SQLMesh release that ships the API and opens an issue to pin
+#   it and release 0.1.0.
+on:
+  schedule:
+    - cron: "17 4 * * *"  # daily, 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  SQLMESH__DISABLE_ANONYMIZED_ANALYTICS: "1"
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  test-main:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install SQLMesh main
+        id: install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "sqlmesh @ git+https://github.com/SQLMesh/sqlmesh@main"
+          python -m pip install -e ".[dev]"
+          echo "sha=$(git ls-remote https://github.com/SQLMesh/sqlmesh refs/heads/main | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+      - name: Type check
+        run: mypy src
+
+      - name: Test
+        run: pytest -q -p no:warnings
+
+      - name: Report a failure
+        if: failure()
+        env:
+          SHA: ${{ steps.install.outputs.sha }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly: checks fail against SQLMesh main"
+          body="Failing against SQLMesh main \`${SHA}\`: ${RUN}"
+          existing="$(gh issue list --state open --search "in:title \"${title}\"" --json number -q '.[0].number')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
+
+  release-watch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Look for a SQLMesh release with execution observations
+        id: watch
+        run: |
+          python -m pip install --upgrade pip
+          latest="$(python -m pip index versions sqlmesh 2>/dev/null | head -1 | sed -E 's/.*\(([^)]+)\).*/\1/')"
+          echo "latest SQLMesh on PyPI: ${latest}"
+          python -m pip download --quiet --no-deps --only-binary=:all: -d /tmp/wheel "sqlmesh==${latest}"
+          if python -m zipfile -l /tmp/wheel/sqlmesh-*.whl | grep -q "sqlmesh/core/execution_observation.py"; then
+            echo "found=${latest}" >> "$GITHUB_OUTPUT"
+          else
+            echo "SQLMesh ${latest} does not ship sqlmesh.core.execution_observation yet."
+          fi
+
+      - name: Open the release issue
+        if: steps.watch.outputs.found != ''
+        env:
+          VERSION: ${{ steps.watch.outputs.found }}
+        run: |
+          title="SQLMesh ${VERSION} ships execution observations: pin it and release 0.1.0"
+          if [ -z "$(gh issue list --repo "${GITHUB_REPOSITORY}" --state all --search "in:title \"${title}\"" --json number -q '.[0].number')" ]; then
+            gh issue create --repo "${GITHUB_REPOSITORY}" --title "$title" --body "$(cat <<EOF
+          SQLMesh ${VERSION} on PyPI includes \`sqlmesh.core.execution_observation\`.
+
+          - [ ] Pin \`sqlmesh>=${VERSION}\` in pyproject.toml (replaces the TODO).
+          - [ ] Drop SQLMESH_REF from ci.yml, docs.yml, and release.yml; install from PyPI.
+          - [ ] Replace "added after v0.236.4" in README.md and docs/ with ${VERSION}.
+          - [ ] Run the suite and the sushi trial against the release.
+          - [ ] Update CHANGELOG.md and tag v0.1.0.
+          EOF
+          )"
+          fi

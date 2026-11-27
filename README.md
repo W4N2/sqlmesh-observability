@@ -90,6 +90,7 @@ scripts/ci.sh                             # everything a change must pass
 [docs/verification.md](https://w4n2.github.io/sqlmesh-observability/verification/) maps each SQLMesh behavior the package depends on to
 the test that pins it. See [CONTRIBUTING.md](https://github.com/W4N2/sqlmesh-observability/blob/main/CONTRIBUTING.md) for commit rules and
 [AGENTS.md](https://github.com/W4N2/sqlmesh-observability/blob/main/AGENTS.md) for guidance aimed at coding agents.
+Release notes are in [CHANGELOG.md](https://github.com/W4N2/sqlmesh-observability/blob/main/CHANGELOG.md).
 
 ## License
 

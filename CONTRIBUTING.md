@@ -47,6 +47,9 @@ Releases are published to PyPI by `.github/workflows/release.yml` when a version
 The tag sets the version (setuptools_scm), and PyPI trusted publishing authorizes the upload, so
 no API token is stored anywhere.
 
+Before tagging, move `CHANGELOG.md`'s `[Unreleased]` entries under the new version with
+today's date, and update the compare links at the bottom.
+
 ```bash
 git tag -s v0.1.0a1 -m "v0.1.0a1"   # or -a if signing isn't set up
 git push origin v0.1.0a1

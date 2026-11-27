@@ -26,7 +26,7 @@ REQUIRED = os.environ.get("REQUIRE_BROWSER_TESTS") == "1"
 def _unavailable(reason: str) -> None:
     if REQUIRED:
         pytest.fail(f"browser tests are required here, but {reason}")
-    pytest.skip(reason)
+    pytest.skip(reason, allow_module_level=True)
 
 
 if importlib.util.find_spec("playwright") is None:

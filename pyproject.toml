@@ -10,6 +10,23 @@ readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.9"
+authors = [{ name = "W4N2" }]
+keywords = ["sqlmesh", "data observability", "data quality", "anomaly detection", "lineage"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Software Development :: Quality Assurance",
+    "Typing :: Typed",
+]
 dependencies = [
     # TODO: pin to the first SQLMesh release that includes execution observations
     # (SQLMesh commit a8e3405f, after v0.236.4).
@@ -41,6 +58,13 @@ dev = [
     "pytest-playwright>=0.6; python_version >= '3.10'",
 ]
 
+[project.urls]
+Homepage = "https://w4n2.github.io/sqlmesh-observability/"
+Documentation = "https://w4n2.github.io/sqlmesh-observability/"
+Source = "https://github.com/W4N2/sqlmesh-observability"
+Issues = "https://github.com/W4N2/sqlmesh-observability/issues"
+Changelog = "https://github.com/W4N2/sqlmesh-observability/blob/main/CHANGELOG.md"
+
 [project.scripts]
 sqlmesh-observe = "sqlmesh_observability.cli:entrypoint"
 
@@ -48,7 +72,7 @@ sqlmesh-observe = "sqlmesh_observability.cli:entrypoint"
 where = ["src"]
 
 [tool.setuptools.package-data]
-sqlmesh_observability = ["audits/*.sql", "web/*.js", "web/*.css"]
+sqlmesh_observability = ["audits/*.sql", "web/*.js", "web/*.css", "py.typed"]
 
 [tool.setuptools_scm]
 fallback_version = "0.0.0"
